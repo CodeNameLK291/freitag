@@ -45,6 +45,40 @@ def test_exchange_client_custom_init():
     assert client.domain == "custom"
 
 
+def test_exchange_client_with_email():
+    """이메일 주소를 직접 제공한 초기화 테스트"""
+    client = ExchangeClient(
+        server="custom.server.com",
+        domain="custom",
+        username="user",
+        password="pass",
+        email="user@custom.com",
+    )
+    assert client.email == "user@custom.com"
+
+
+@patch("src.exchange_client.Configuration")
+@patch("src.exchange_client.Credentials")
+@patch("src.exchange_client.Account")
+def test_connect_with_email(
+    mock_account_class, mock_credentials, mock_config_class, mock_config
+):
+    """이메일 주소를 직접 제공한 경우 연결 테스트"""
+    # Mock 설정
+    mock_account_instance = MagicMock()
+    mock_account_instance.inbox.total_count = 5
+    mock_account_class.return_value = mock_account_instance
+
+    client = ExchangeClient(email="test@example.com")
+    result = client.connect()
+
+    assert result is True
+    assert client.is_connected()
+    # Account가 제공된 이메일 주소로 호출되었는지 확인
+    call_kwargs = mock_account_class.call_args.kwargs
+    assert call_kwargs["primary_smtp_address"] == "test@example.com"
+
+
 @patch("src.exchange_client.Configuration")
 @patch("src.exchange_client.Credentials")
 @patch("src.exchange_client.Account")

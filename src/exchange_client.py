@@ -25,6 +25,7 @@ class ExchangeClient:
         domain: Optional[str] = None,
         username: Optional[str] = None,
         password: Optional[str] = None,
+        email: Optional[str] = None,
     ):
         """Exchange 클라이언트 초기화
 
@@ -33,11 +34,13 @@ class ExchangeClient:
             domain: 도메인
             username: 사용자명
             password: 비밀번호
+            email: 이메일 주소 (선택적, 없으면 자동 생성)
         """
         self.server = server or Config.EXCHANGE_SERVER
         self.domain = domain or Config.EXCHANGE_DOMAIN
         self.username = username or Config.EXCHANGE_USERNAME
         self.password = password or Config.EXCHANGE_PASSWORD
+        self.email = email or Config.EXCHANGE_EMAIL
 
         self.account: Optional[Account] = None
         self._connected = False
@@ -66,8 +69,15 @@ class ExchangeClient:
             # 서버 설정
             config = Configuration(server=self.server, credentials=credentials)
 
-            # 계정 연결
-            smtp_address = f"{self.username}@{self.server.replace('outlook.', '')}"
+            # 계정 연결 - 이메일 주소 결정
+            if self.email:
+                # 명시적으로 제공된 이메일 주소 사용
+                smtp_address = self.email
+            else:
+                # 자동 생성: username@domain (서버에서 'outlook.' 제거)
+                domain_part = self.server.replace("outlook.", "")
+                smtp_address = f"{self.username}@{domain_part}"
+
             self.account = Account(
                 primary_smtp_address=smtp_address,
                 config=config,

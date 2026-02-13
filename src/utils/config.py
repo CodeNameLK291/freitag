@@ -16,6 +16,7 @@ class Config:
     EXCHANGE_DOMAIN: str = os.getenv("EXCHANGE_DOMAIN", "")
     EXCHANGE_USERNAME: str = os.getenv("EXCHANGE_USERNAME", "")
     EXCHANGE_PASSWORD: str = os.getenv("EXCHANGE_PASSWORD", "")
+    EXCHANGE_EMAIL: str = os.getenv("EXCHANGE_EMAIL", "")  # 선택적 이메일 주소
 
     # 메일 설정
     MAIL_FETCH_LIMIT: int = int(os.getenv("MAIL_FETCH_LIMIT", "50"))
