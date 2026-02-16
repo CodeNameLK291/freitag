@@ -10,13 +10,13 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("Freitag")
     app.setOrganizationName("Freitag")
-    
+
     # 메인 윈도우 생성 및 표시
     window = MainWindow()
     window.show()
-    
+
     return app.exec_()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())
