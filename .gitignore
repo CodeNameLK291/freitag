@@ -1,3 +1,4 @@
+
 # Environment variables
 .env
 
@@ -9,12 +10,15 @@
 # Email cache
 email_cache/
 
+
+
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
+
 build/
 develop-eggs/
 dist/
@@ -33,6 +37,12 @@ share/python-wheels/
 .installed.cfg
 *.egg
 
+venv/
+.venv/
+ENV/
+env/
+
+
 # Testing
 .pytest_cache/
 .coverage
@@ -44,7 +54,9 @@ htmlcov/
 .idea/
 *.swp
 *.swo
+
 *~
+
 
 # OS
 .DS_Store
