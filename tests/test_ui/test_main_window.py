@@ -61,3 +61,35 @@ def test_email_fetch_thread() -> None:
 
     thread = EmailFetchThread(mock_client)
     assert thread is not None
+
+    # 스레드 실행 테스트
+    finished_signal_received = []
+    thread.finished.connect(lambda msgs: finished_signal_received.append(msgs))
+
+    # run 메소드 직접 호출 (QThread.start() 대신)
+    thread.run()
+
+    # 신호가 올바른 데이터로 발생했는지 확인
+    assert len(finished_signal_received) == 1
+    assert finished_signal_received[0] == [
+        {"subject": "Test", "sender": "test@test.com"}
+    ]
+
+
+def test_email_fetch_thread_error() -> None:
+    """이메일 가져오기 스레드 에러 테스트"""
+    mock_client = Mock()
+    mock_client.get_inbox_messages.side_effect = Exception("Connection error")
+
+    thread = EmailFetchThread(mock_client)
+
+    # 에러 신호 테스트
+    error_signal_received = []
+    thread.error.connect(lambda err: error_signal_received.append(err))
+
+    # run 메소드 직접 호출
+    thread.run()
+
+    # 에러 신호가 발생했는지 확인
+    assert len(error_signal_received) == 1
+    assert "Connection error" in error_signal_received[0]

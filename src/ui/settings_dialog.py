@@ -51,8 +51,12 @@ class SettingsDialog(QDialog):
         layout.addLayout(form)
 
         # 도움말
-        help_label = QLabel("* 비밀번호는 안전하게 저장되지 않습니다.")
-        help_label.setStyleSheet("color: gray; font-size: 10px;")
+        help_label = QLabel(
+            "* 비밀번호는 .env 파일에 평문으로 저장됩니다.\n"
+            "* .env 파일의 권한을 제한하여 보안을 유지하세요.\n"
+            "* 프로덕션 환경에서는 더 안전한 인증 방법을 고려하세요."
+        )
+        help_label.setStyleSheet("color: red; font-size: 10px;")
         layout.addWidget(help_label)
 
         # 버튼
@@ -83,21 +87,44 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(self, "경고", "서버 주소와 사용자명은 필수입니다.")
             return
 
+        # 입력값 검증 및 이스케이프
+        def sanitize_value(value: str) -> str:
+            """입력값에서 개행 문자 제거 및 특수 문자 처리"""
+            return value.replace("\n", "").replace("\r", "")
+
+        server = sanitize_value(self.server_input.text())
+        domain = sanitize_value(self.domain_input.text())
+        username = sanitize_value(self.username_input.text())
+        password = sanitize_value(self.password_input.text())
+        email = sanitize_value(self.email_input.text())
+
         # .env 파일에 저장하도록 안내
         env_content = f"""# Exchange Server Configuration
-EXCHANGE_SERVER={self.server_input.text()}
-EXCHANGE_DOMAIN={self.domain_input.text()}
-EXCHANGE_USERNAME={self.username_input.text()}
-EXCHANGE_PASSWORD={self.password_input.text()}
-EXCHANGE_EMAIL={self.email_input.text()}
+EXCHANGE_SERVER={server}
+EXCHANGE_DOMAIN={domain}
+EXCHANGE_USERNAME={username}
+EXCHANGE_PASSWORD={password}
+EXCHANGE_EMAIL={email}
 
 # Email Settings
 MAIL_FETCH_LIMIT=50
 """
 
         try:
-            with open(".env", "w", encoding="utf-8") as f:
+            # .env 파일 생성
+            env_path = ".env"
+            with open(env_path, "w", encoding="utf-8") as f:
                 f.write(env_content)
+
+            # Unix 시스템에서 파일 권한 제한 (소유자만 읽기/쓰기)
+            import os
+            import stat
+
+            if hasattr(os, "chmod"):
+                try:
+                    os.chmod(env_path, stat.S_IRUSR | stat.S_IWUSR)
+                except (OSError, AttributeError):
+                    pass  # Windows나 권한 설정 실패는 무시
 
             # QSettings에도 저장 (비밀번호 제외)
             self.settings.setValue("server", self.server_input.text())

@@ -15,6 +15,7 @@ from PyQt5.QtWidgets import (
     QAction,
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtGui import QCloseEvent
 from src.exchange_client import ExchangeClient
 from src.utils.logger import setup_logger
 from src.ui.settings_dialog import SettingsDialog
@@ -226,7 +227,7 @@ class MainWindow(QMainWindow):
             # 설정 저장됨
             self.statusBar.showMessage("설정이 저장되었습니다.")
 
-    def closeEvent(self, event) -> None:
+    def closeEvent(self, event: QCloseEvent) -> None:
         """윈도우 닫기 전"""
         if self.client and self.client.is_connected():
             self.client.disconnect()
