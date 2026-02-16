@@ -75,6 +75,34 @@ client.disconnect()
 
 자세한 사용 예제는 `examples/example_usage.py`를 참조하세요.
 
+## 🖥️ GUI 사용법
+
+### 설치
+```bash
+pip install -r requirements.txt
+```
+
+### 실행
+```bash
+python main.py
+```
+
+### 설정
+1. 프로그램 실행
+2. "설정" 버튼 클릭
+3. Exchange 서버 정보 입력:
+   - Exchange 서버: outlook.hmc.co.kr
+   - 도메인: autos
+   - 사용자명: your_username
+   - 비밀번호: your_password
+4. "저장" 클릭
+
+### 사용법
+1. "연결" 버튼 클릭하여 서버 연결
+2. "새로고침" 버튼으로 메일 가져오기
+3. 왼쪽 목록에서 메일 선택
+4. 오른쪽에서 메일 내용 확인
+
 ## 🧪 테스트
 
 ```bash
@@ -101,25 +129,28 @@ flake8 src/ tests/
 
 ```
 freitag/
-├── src/
-│   ├── __init__.py
-│   ├── exchange_client.py      # Exchange 클라이언트 메인 모듈
-│   └── utils/
-│       ├── __init__.py
-│       ├── config.py            # 환경 변수 설정 관리
-│       └── logger.py            # 로깅 유틸리티
-├── tests/
-│   ├── __init__.py
-│   ├── test_config.py           # 설정 모듈 테스트
-│   ├── test_exchange_client.py  # Exchange 클라이언트 테스트
-│   └── test_logger.py           # 로거 모듈 테스트
+├── .github/workflows/    # GitHub Actions 워크플로우
+├── src/                  # 소스 코드
+│   ├── ui/              # PyQt5 GUI
+│   │   ├── main_window.py
+│   │   └── settings_dialog.py
+│   ├── utils/           # 유틸리티
+│   │   ├── config.py
+│   │   └── logger.py
+│   ├── exchange_client.py
+│   └── __init__.py
+├── tests/               # 테스트 코드
+│   ├── test_ui/
+│   │   └── test_main_window.py
+│   ├── test_config.py
+│   ├── test_exchange_client.py
+│   └── test_logger.py
 ├── examples/
-│   └── example_usage.py         # 사용 예제
-├── requirements.txt
-├── setup.cfg                    # pytest 설정
-├── .flake8                      # flake8 설정
-├── .env.example                 # 환경 변수 예제
-└── README.md
+│   └── example_usage.py
+├── main.py             # GUI 실행 파일
+├── requirements.txt     # Python 의존성
+├── .env.example        # 환경 변수 예시
+└── README.md           # 프로젝트 문서
 ```
 
 ## 🔐 보안
@@ -127,46 +158,6 @@ freitag/
 - `.env` 파일은 절대 커밋하지 마세요
 - `.gitignore`에 `.env`가 포함되어 있습니다
 - 실제 비밀번호는 `.env` 파일에만 저장하세요
-
-## 📄 라이선스
-
-이 프로젝트는 개인 프로젝트입니다.
-
-## 👤 작성자
-
-CodeNameLK291
-
-### 설치
-```bash
-pip install -r requirements.txt
-```
-
-### 테스트 실행
-```bash
-pytest tests/
-```
-
-### 코드 포맷팅
-```bash
-black src/ tests/
-```
-
-### 린팅
-```bash
-flake8 src/ tests/
-```
-
-## 📁 프로젝트 구조
-
-```
-freitag/
-├── .github/workflows/    # GitHub Actions 워크플로우
-├── src/                  # 소스 코드
-├── tests/               # 테스트 코드
-├── requirements.txt     # Python 의존성
-├── pytest.ini          # pytest 설정
-└── README.md           # 프로젝트 문서
-```
 
 ## 🔄 개발 워크플로우
 
@@ -176,6 +167,10 @@ freitag/
 4. GitHub Actions가 자동으로 테스트 실행
 5. 결과 확인 및 수정
 6. 모든 테스트 통과 시 머지
+
+## 👤 작성자
+
+CodeNameLK291
 
 ## 📝 라이선스
 
