@@ -1,7 +1,12 @@
 """main_window 모듈 테스트"""
 
-from unittest.mock import Mock, patch
+import os
+from unittest.mock import Mock, patch, MagicMock
 import pytest
+
+# PyQt5 테스트를 위한 headless 설정
+os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+
 from PyQt5.QtWidgets import QApplication
 from src.ui.main_window import MainWindow, EmailFetchThread
 
@@ -30,18 +35,21 @@ def test_main_window_ui_elements(qapp) -> None:
     assert window.statusBar is not None
 
 
+@patch('src.ui.main_window.QMessageBox')
 @patch('src.ui.main_window.ExchangeClient')
-def test_connect_to_server(mock_client, qapp) -> None:
+def test_connect_to_server(mock_client, mock_msgbox, qapp) -> None:
     """서버 연결 테스트"""
     window = MainWindow()
     
     mock_instance = Mock()
     mock_instance.connect.return_value = True
+    mock_instance.is_connected.return_value = True
     mock_client.return_value = mock_instance
     
     window.connect_to_server()
     
     assert window.client is not None
+    mock_msgbox.information.assert_called_once()
 
 
 def test_email_fetch_thread() -> None:
