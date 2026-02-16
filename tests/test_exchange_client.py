@@ -2,7 +2,7 @@
 
 import pytest
 from unittest.mock import patch, MagicMock
-from datetime import datetime
+from datetime import datetime, timezone
 from src.exchange_client import ExchangeClient
 from exchangelib.errors import UnauthorizedError, TransportError
 
@@ -60,9 +60,7 @@ def test_exchange_client_with_email():
 @patch("src.exchange_client.Configuration")
 @patch("src.exchange_client.Credentials")
 @patch("src.exchange_client.Account")
-def test_connect_with_email(
-    mock_account_class, mock_credentials, mock_config_class, mock_config
-):
+def test_connect_with_email(mock_account_class, mock_credentials, mock_config_class, mock_config):
     """이메일 주소를 직접 제공한 경우 연결 테스트"""
     # Mock 설정
     mock_account_instance = MagicMock()
@@ -82,9 +80,7 @@ def test_connect_with_email(
 @patch("src.exchange_client.Configuration")
 @patch("src.exchange_client.Credentials")
 @patch("src.exchange_client.Account")
-def test_connect_success(
-    mock_account_class, mock_credentials, mock_config_class, mock_config
-):
+def test_connect_success(mock_account_class, mock_credentials, mock_config_class, mock_config):
     """연결 성공 테스트"""
     # Mock 설정
     mock_account_instance = MagicMock()
@@ -133,8 +129,8 @@ def test_get_inbox_messages_success(mock_account_class, mock_config):
     mock_message.cc_recipients = []
     mock_message.body = "Test body"
     mock_message.text_body = "Test text body"
-    mock_message.datetime_received = datetime.now()
-    mock_message.datetime_sent = datetime.now()
+    mock_message.datetime_received = datetime.now(timezone.utc)
+    mock_message.datetime_sent = datetime.now(timezone.utc)
     mock_message.is_read = False
     mock_message.importance = "Normal"
     mock_message.has_attachments = False
@@ -287,9 +283,7 @@ def test_get_folder_list_error(mock_account_class, mock_config):
 @patch("src.exchange_client.Configuration")
 @patch("src.exchange_client.Credentials")
 @patch("src.exchange_client.Account")
-def test_disconnect(
-    mock_account_class, mock_credentials, mock_config_class, mock_config
-):
+def test_disconnect(mock_account_class, mock_credentials, mock_config_class, mock_config):
     """연결 종료 테스트"""
     # Mock 설정
     mock_account_instance = MagicMock()
@@ -316,8 +310,8 @@ def test_extract_message_info_with_none_subject(mock_account_class, mock_config)
     mock_message.cc_recipients = None
     mock_message.body = None
     mock_message.text_body = None
-    mock_message.datetime_received = datetime.now()
-    mock_message.datetime_sent = datetime.now()
+    mock_message.datetime_received = datetime.now(timezone.utc)
+    mock_message.datetime_sent = datetime.now(timezone.utc)
     mock_message.is_read = False
     mock_message.importance = "Normal"
     mock_message.has_attachments = False

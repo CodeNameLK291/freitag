@@ -1,7 +1,7 @@
 """Exchange 메일 서버 연동 모듈"""
 
 from typing import List, Optional, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from exchangelib import (
     Credentials,
     Account,
@@ -130,12 +130,12 @@ class ExchangeClient:
             logger.info(f"받은편지함에서 메일 가져오기 (최대 {limit}개)")
 
             # 날짜 필터
-            start_date = datetime.now() - timedelta(days=days_back)
+            start_date = datetime.now(timezone.utc) - timedelta(days=days_back)
 
             # 메일 쿼리
-            messages = self.account.inbox.filter(
-                datetime_received__gte=start_date
-            ).order_by("-datetime_received")[:limit]
+            messages = self.account.inbox.filter(datetime_received__gte=start_date).order_by(
+                "-datetime_received"
+            )[:limit]
 
             # 메일 정보 추출
             mail_list = []
@@ -165,9 +165,7 @@ class ExchangeClient:
             "subject": message.subject or "(제목 없음)",
             "sender": self._extract_email_address(message.sender),
             "sender_name": (
-                getattr(message.sender, "name", "Unknown")
-                if message.sender
-                else "Unknown"
+                getattr(message.sender, "name", "Unknown") if message.sender else "Unknown"
             ),
             "to_recipients": [
                 self._extract_email_address(r) for r in (message.to_recipients or [])
