@@ -1,6 +1,7 @@
 """메인 윈도우 모듈"""
 
 from typing import Optional, List, Dict, Any
+from datetime import datetime
 from PyQt5.QtWidgets import (
     QMainWindow,
     QWidget,
@@ -14,10 +15,12 @@ from PyQt5.QtWidgets import (
     QSplitter,
     QToolBar,
     QAction,
+    QProgressBar,
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QCloseEvent, QFont
 from src.exchange_client import ExchangeClient
+from src.mail_db import MailRepository
 from src.utils.logger import setup_logger
 from src.ui.settings_dialog import SettingsDialog
 
@@ -29,17 +32,34 @@ class EmailFetchThread(QThread):
 
     finished = pyqtSignal(list)
     error = pyqtSignal(str)
+    progress = pyqtSignal(int, int)  # 현재 수, 전체 수
 
-    def __init__(self, client: ExchangeClient, limit: int = 50, days_back: int = 7) -> None:
+    def __init__(
+        self,
+        client: ExchangeClient,
+        limit: Optional[int] = 50,
+        days_back: Optional[int] = 7,
+        since_datetime: Optional[datetime] = None,
+    ) -> None:
         super().__init__()
         self.client = client
         self.limit = limit
         self.days_back = days_back
+        self.since_datetime = since_datetime
 
     def run(self) -> None:
         """메일 가져오기 실행"""
         try:
-            messages = self.client.get_inbox_messages(limit=self.limit, days_back=self.days_back)
+            # 진행률 콜백 함수
+            def progress_callback(current: int, total: int) -> None:
+                self.progress.emit(current, total)
+
+            messages = self.client.get_inbox_messages(
+                limit=self.limit,
+                days_back=self.days_back,
+                since_datetime=self.since_datetime,
+                progress_callback=progress_callback,
+            )
             self.finished.emit(messages)
         except Exception as e:
             logger.error(f"메일 가져오기 실패: {e}")
@@ -54,8 +74,14 @@ class MainWindow(QMainWindow):
         self.client: Optional[ExchangeClient] = None
         self.messages: List[Dict[str, Any]] = []
         self.fetch_thread: Optional[EmailFetchThread] = None
+        self.mail_repo = MailRepository()  # SQLite 저장소
+        self.auto_connected = False  # 자동 연결 성공 여부
+        self.is_auto_connecting = False  # 현재 자동 연결 중인지
 
         self.init_ui()
+
+        # DB에서 기존 메일 로드
+        self.load_emails_from_db()
 
     def init_ui(self) -> None:
         """UI 초기화"""
@@ -115,6 +141,12 @@ class MainWindow(QMainWindow):
 
         main_layout.addWidget(splitter)
 
+        # 프로그레스 바
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setTextVisible(True)
+        main_layout.addWidget(self.progress_bar)
+
         # 상태바
         self.statusBar = QStatusBar()
         self.setStatusBar(self.statusBar)
@@ -142,8 +174,87 @@ class MainWindow(QMainWindow):
         settings_action.triggered.connect(self.open_settings)
         toolbar.addAction(settings_action)
 
+    def showEvent(self, event) -> None:  # type: ignore  # PyQt5 event type
+        """윈도우가 표시될 때 자동 연결 시도"""
+        super().showEvent(event)
+
+        # 최초 1회만 자동 연결 시도
+        if not self.auto_connected:
+            self.auto_connected = True
+            self.auto_connect_and_sync()
+
+    def load_emails_from_db(self) -> None:
+        """DB에서 기존 메일 로드"""
+        try:
+            emails = self.mail_repo.get_all_emails()
+            if emails:
+                logger.info(f"DB에서 {len(emails)}개 메일 로드")
+                self.messages = emails
+                self.display_emails(emails)
+                self.statusBar.showMessage(f"DB에서 {len(emails)}개 메일 로드 완료")
+            else:
+                logger.info("DB에 저장된 메일 없음")
+        except Exception as e:
+            logger.error(f"DB 메일 로드 실패: {e}")
+
+    def auto_connect_and_sync(self) -> None:
+        """자동 연결 및 동기화"""
+        self.is_auto_connecting = True
+        try:
+            self.statusBar.showMessage("서버 자동 연결 중...")
+
+            # ExchangeClient 생성
+            self.client = ExchangeClient()
+
+            # 연결 시도
+            if self.client.connect():
+                self.statusBar.showMessage("연결 성공! 새 메일 확인 중...")
+                logger.info("서버 자동 연결 성공")
+
+                # 증분 동기화 (마지막 메일 이후)
+                self.sync_new_emails()
+            else:
+                self.statusBar.showMessage("자동 연결 실패 - 수동 연결을 사용하세요")
+                logger.warning("서버 자동 연결 실패")
+
+        except Exception as e:
+            logger.error(f"자동 연결 실패: {e}")
+            self.statusBar.showMessage(f"자동 연결 실패: {str(e)}")
+        finally:
+            self.is_auto_connecting = False
+
+    def sync_new_emails(self) -> None:
+        """증분 동기화 - 새 메일만 가져오기"""
+        if not self.client or not self.client.is_connected():
+            return
+
+        # DB에서 가장 최근 메일 날짜 가져오기
+        latest_datetime = self.mail_repo.get_latest_datetime()
+
+        if latest_datetime:
+            # 증분 동기화: 마지막 메일 이후만
+            logger.info(f"증분 동기화: {latest_datetime} 이후 메일 가져오기")
+            self.fetch_thread = EmailFetchThread(
+                self.client, limit=None, days_back=None, since_datetime=latest_datetime
+            )
+        else:
+            # 첫 실행: 전체 메일 가져오기
+            logger.info("첫 실행: 서버의 모든 메일 가져오기")
+            self.fetch_thread = EmailFetchThread(
+                self.client, limit=None, days_back=None
+            )
+
+        # 프로그레스 바 표시
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setValue(0)
+
+        self.fetch_thread.finished.connect(self.on_emails_synced)
+        self.fetch_thread.error.connect(self.on_fetch_error)
+        self.fetch_thread.progress.connect(self.on_progress_update)
+        self.fetch_thread.start()
+
     def connect_to_server(self) -> None:
-        """Exchange 서버에 연결"""
+        """Exchange 서버에 연결 (수동)"""
         try:
             self.statusBar.showMessage("서버 연결 중...")
 
@@ -154,7 +265,8 @@ class MainWindow(QMainWindow):
             if self.client.connect():
                 self.statusBar.showMessage("연결 성공!")
                 QMessageBox.information(self, "성공", "Exchange 서버에 연결되었습니다.")
-                self.refresh_emails()
+                # 수동 연결 후 증분 동기화
+                self.sync_new_emails()
             else:
                 self.statusBar.showMessage("연결 실패")
                 QMessageBox.warning(self, "실패", "서버 연결에 실패했습니다.")
@@ -165,24 +277,52 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "오류", f"연결 중 오류 발생:\n{str(e)}")
 
     def refresh_emails(self) -> None:
-        """메일 목록 새로고침"""
+        """메일 목록 새로고침 (수동)"""
         if not self.client or not self.client.is_connected():
             QMessageBox.warning(self, "경고", "먼저 서버에 연결하세요.")
             return
 
         self.statusBar.showMessage("메일 가져오는 중...")
-        self.mail_table.setRowCount(0)
 
-        # 백그라운드 스레드로 메일 가져오기
-        self.fetch_thread = EmailFetchThread(self.client)
-        self.fetch_thread.finished.connect(self.on_emails_fetched)
-        self.fetch_thread.error.connect(self.on_fetch_error)
-        self.fetch_thread.start()
+        # 프로그레스 바 표시
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setValue(0)
 
-    def on_emails_fetched(self, messages: List[Dict[str, Any]]) -> None:
-        """메일 가져오기 완료 시 호출"""
-        self.messages = messages
+        # 증분 동기화
+        self.sync_new_emails()
 
+    def on_progress_update(self, current: int, total: int) -> None:
+        """프로그레스 바 업데이트"""
+        if total > 0:
+            percentage = int((current / total) * 100)
+            self.progress_bar.setValue(percentage)
+            self.progress_bar.setFormat(f"{current}/{total} ({percentage}%)")
+            self.statusBar.showMessage(f"메일 가져오는 중... {current}/{total}")
+
+    def on_emails_synced(self, new_messages: List[Dict[str, Any]]) -> None:
+        """새 메일 동기화 완료 시 호출"""
+        # 프로그레스 바 숨김
+        self.progress_bar.setVisible(False)
+
+        if new_messages:
+            # DB에 저장
+            saved_count = self.mail_repo.save_emails(new_messages)
+            logger.info(f"{saved_count}개의 새 메일 저장")
+
+            # DB에서 전체 메일 다시 로드 (정렬 및 표시)
+            all_emails = self.mail_repo.get_all_emails()
+            self.messages = all_emails
+            self.display_emails(all_emails)
+
+            self.statusBar.showMessage(
+                f"{saved_count}개의 새 메일 저장 완료 (총 {len(all_emails)}개)"
+            )
+        else:
+            logger.info("새 메일 없음")
+            self.statusBar.showMessage("새 메일이 없습니다")
+
+    def display_emails(self, messages: List[Dict[str, Any]]) -> None:
+        """메일 테이블에 표시"""
         # 정렬 비활성화 (데이터 입력 중)
         self.mail_table.setSortingEnabled(False)
         self.mail_table.setRowCount(len(messages))
@@ -239,12 +379,14 @@ class MainWindow(QMainWindow):
         # 기본 정렬: 날짜 내림차순 (최신순)
         self.mail_table.sortItems(1, Qt.DescendingOrder)
 
-        self.statusBar.showMessage(f"{len(messages)}개의 메일을 가져왔습니다.")
-
     def on_fetch_error(self, error: str) -> None:
         """메일 가져오기 실패"""
+        # 프로그레스 바 숨김
+        self.progress_bar.setVisible(False)
         self.statusBar.showMessage("메일 가져오기 실패")
-        QMessageBox.critical(self, "오류", f"메일을 가져오는 중 오류 발생:\n{error}")
+        # 자동 연결 중인 경우에는 상태바 메시지만 표시, 수동 연결은 팝업 표시
+        if not self.is_auto_connecting:
+            QMessageBox.critical(self, "오류", f"메일을 가져오는 중 오류 발생:\n{error}")
 
     def on_mail_row_clicked(self, row: int, column: int) -> None:
         """테이블 행 클릭 시 호출"""
