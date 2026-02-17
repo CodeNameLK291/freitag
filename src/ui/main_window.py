@@ -27,6 +27,27 @@ from src.ui.settings_dialog import SettingsDialog
 logger = setup_logger(__name__)
 
 
+class ConnectThread(QThread):
+    """서버 연결을 백그라운드에서 수행하는 스레드"""
+
+    finished = pyqtSignal(bool)  # 연결 성공/실패
+    error = pyqtSignal(str)  # 에러 메시지
+
+    def __init__(self, client: ExchangeClient) -> None:
+        super().__init__()
+        self.client = client
+
+    def run(self) -> None:
+        """서버 연결 실행"""
+        try:
+            success = self.client.connect()
+            self.finished.emit(success)
+        except Exception as e:
+            logger.error(f"연결 실패: {e}")
+            self.error.emit(str(e))
+            self.finished.emit(False)
+
+
 class EmailFetchThread(QThread):
     """메일을 백그라운드에서 가져오는 스레드"""
 
@@ -74,6 +95,7 @@ class MainWindow(QMainWindow):
         self.client: Optional[ExchangeClient] = None
         self.messages: List[Dict[str, Any]] = []
         self.fetch_thread: Optional[EmailFetchThread] = None
+        self.connect_thread: Optional[ConnectThread] = None
         self.mail_repo = MailRepository()  # SQLite 저장소
         self.auto_connected = False  # 자동 연결 성공 여부
         self.is_auto_connecting = False  # 현재 자동 연결 중인지
@@ -158,9 +180,9 @@ class MainWindow(QMainWindow):
         self.addToolBar(toolbar)
 
         # 연결 버튼
-        connect_action = QAction("연결", self)
-        connect_action.triggered.connect(self.connect_to_server)
-        toolbar.addAction(connect_action)
+        self.connect_action = QAction("연결", self)
+        self.connect_action.triggered.connect(self.connect_to_server)
+        toolbar.addAction(self.connect_action)
 
         # 새로고침 버튼
         refresh_action = QAction("새로고침", self)
@@ -200,28 +222,35 @@ class MainWindow(QMainWindow):
     def auto_connect_and_sync(self) -> None:
         """자동 연결 및 동기화"""
         self.is_auto_connecting = True
-        try:
-            self.statusBar.showMessage("서버 자동 연결 중...")
+        self.statusBar.showMessage("서버 자동 연결 중...")
 
-            # ExchangeClient 생성
-            self.client = ExchangeClient()
+        # ExchangeClient 생성
+        self.client = ExchangeClient()
 
-            # 연결 시도
-            if self.client.connect():
-                self.statusBar.showMessage("연결 성공! 새 메일 확인 중...")
-                logger.info("서버 자동 연결 성공")
+        # ConnectThread로 연결 시도
+        self.connect_thread = ConnectThread(self.client)
+        self.connect_thread.finished.connect(self.on_auto_connect_finished)
+        self.connect_thread.error.connect(self.on_connect_error)
+        self.connect_thread.start()
 
-                # 증분 동기화 (마지막 메일 이후)
-                self.sync_new_emails()
-            else:
-                self.statusBar.showMessage("자동 연결 실패 - 수동 연결을 사용하세요")
-                logger.warning("서버 자동 연결 실패")
+    def on_auto_connect_finished(self, success: bool) -> None:
+        """자동 연결 완료 시 호출"""
+        if success:
+            self.statusBar.showMessage("연결 성공! 새 메일 확인 중...")
+            logger.info("서버 자동 연결 성공")
 
-        except Exception as e:
-            logger.error(f"자동 연결 실패: {e}")
-            self.statusBar.showMessage(f"자동 연결 실패: {str(e)}")
-        finally:
+            # 증분 동기화 (마지막 메일 이후)
+            self.sync_new_emails()
+        else:
+            self.statusBar.showMessage("자동 연결 실패 - 수동 연결을 사용하세요")
+            logger.warning("서버 자동 연결 실패")
             self.is_auto_connecting = False
+
+    def on_connect_error(self, error: str) -> None:
+        """연결 에러 시 호출"""
+        logger.error(f"자동 연결 실패: {error}")
+        self.statusBar.showMessage(f"자동 연결 실패: {error}")
+        self.is_auto_connecting = False
 
     def sync_new_emails(self) -> None:
         """증분 동기화 - 새 메일만 가져오기"""
@@ -247,6 +276,7 @@ class MainWindow(QMainWindow):
         # 프로그레스 바 표시
         self.progress_bar.setVisible(True)
         self.progress_bar.setValue(0)
+        self.progress_bar.setFormat("0/? (메일 확인 중...)")
 
         self.fetch_thread.finished.connect(self.on_emails_synced)
         self.fetch_thread.error.connect(self.on_fetch_error)
@@ -255,26 +285,37 @@ class MainWindow(QMainWindow):
 
     def connect_to_server(self) -> None:
         """Exchange 서버에 연결 (수동)"""
-        try:
-            self.statusBar.showMessage("서버 연결 중...")
+        self.statusBar.showMessage("서버 연결 중...")
+        self.connect_action.setEnabled(False)  # 연결 버튼 비활성화
 
-            # ExchangeClient 생성
-            self.client = ExchangeClient()
+        # ExchangeClient 생성
+        self.client = ExchangeClient()
 
-            # 연결 시도
-            if self.client.connect():
-                self.statusBar.showMessage("연결 성공!")
-                QMessageBox.information(self, "성공", "Exchange 서버에 연결되었습니다.")
-                # 수동 연결 후 증분 동기화
-                self.sync_new_emails()
-            else:
-                self.statusBar.showMessage("연결 실패")
-                QMessageBox.warning(self, "실패", "서버 연결에 실패했습니다.")
+        # ConnectThread로 연결 시도
+        self.connect_thread = ConnectThread(self.client)
+        self.connect_thread.finished.connect(self.on_manual_connect_finished)
+        self.connect_thread.error.connect(self.on_manual_connect_error)
+        self.connect_thread.start()
 
-        except Exception as e:
-            logger.error(f"연결 실패: {e}")
+    def on_manual_connect_finished(self, success: bool) -> None:
+        """수동 연결 완료 시 호출"""
+        self.connect_action.setEnabled(True)  # 연결 버튼 활성화
+
+        if success:
+            self.statusBar.showMessage("연결 성공!")
+            QMessageBox.information(self, "성공", "Exchange 서버에 연결되었습니다.")
+            # 수동 연결 후 증분 동기화
+            self.sync_new_emails()
+        else:
             self.statusBar.showMessage("연결 실패")
-            QMessageBox.critical(self, "오류", f"연결 중 오류 발생:\n{str(e)}")
+            QMessageBox.warning(self, "실패", "서버 연결에 실패했습니다.")
+
+    def on_manual_connect_error(self, error: str) -> None:
+        """수동 연결 에러 시 호출"""
+        self.connect_action.setEnabled(True)  # 연결 버튼 활성화
+        logger.error(f"연결 실패: {error}")
+        self.statusBar.showMessage("연결 실패")
+        QMessageBox.critical(self, "오류", f"연결 중 오류 발생:\n{error}")
 
     def refresh_emails(self) -> None:
         """메일 목록 새로고침 (수동)"""
@@ -303,6 +344,10 @@ class MainWindow(QMainWindow):
         """새 메일 동기화 완료 시 호출"""
         # 프로그레스 바 숨김
         self.progress_bar.setVisible(False)
+
+        # 자동 연결 플래그 해제
+        if self.is_auto_connecting:
+            self.is_auto_connecting = False
 
         if new_messages:
             # DB에 저장
@@ -383,6 +428,11 @@ class MainWindow(QMainWindow):
         """메일 가져오기 실패"""
         # 프로그레스 바 숨김
         self.progress_bar.setVisible(False)
+
+        # 자동 연결 플래그 해제
+        if self.is_auto_connecting:
+            self.is_auto_connecting = False
+
         self.statusBar.showMessage("메일 가져오기 실패")
         # 자동 연결 중인 경우에는 상태바 메시지만 표시, 수동 연결은 팝업 표시
         if not self.is_auto_connecting:
