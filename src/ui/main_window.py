@@ -5,17 +5,18 @@ from PyQt5.QtWidgets import (
     QMainWindow,
     QWidget,
     QVBoxLayout,
-    QListWidget,
+    QTableWidget,
+    QTableWidgetItem,
+    QHeaderView,
     QTextEdit,
     QStatusBar,
     QMessageBox,
     QSplitter,
-    QListWidgetItem,
     QToolBar,
     QAction,
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QCloseEvent
+from PyQt5.QtGui import QCloseEvent, QFont
 from src.exchange_client import ExchangeClient
 from src.utils.logger import setup_logger
 from src.ui.settings_dialog import SettingsDialog
@@ -79,10 +80,33 @@ class MainWindow(QMainWindow):
         # 스플리터 (좌우 분할)
         splitter = QSplitter(Qt.Horizontal)
 
-        # 왼쪽: 메일 목록
-        self.mail_list = QListWidget()
-        self.mail_list.itemClicked.connect(self.on_mail_selected)
-        splitter.addWidget(self.mail_list)
+        # 왼쪽: 메일 테이블
+        self.mail_table = QTableWidget()
+        self.mail_table.setColumnCount(5)
+        self.mail_table.setHorizontalHeaderLabels(['', '날짜', '제목', '보낸이', '📎'])
+        
+        # 정렬 활성화
+        self.mail_table.setSortingEnabled(True)
+        
+        # 선택 모드 설정
+        self.mail_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.mail_table.setSelectionMode(QTableWidget.SingleSelection)
+        
+        # 편집 불가
+        self.mail_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        
+        # 헤더 설정
+        header = self.mail_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # 읽음 상태
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # 날짜
+        header.setSectionResizeMode(2, QHeaderView.Stretch)           # 제목
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # 보낸이
+        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # 첨부
+        
+        # 행 클릭 이벤트
+        self.mail_table.cellClicked.connect(self.on_mail_row_clicked)
+        
+        splitter.addWidget(self.mail_table)
 
         # 오른쪽: 메일 내용
         self.mail_viewer = QTextEdit()
@@ -151,7 +175,7 @@ class MainWindow(QMainWindow):
             return
 
         self.statusBar.showMessage("메일 가져오는 중...")
-        self.mail_list.clear()
+        self.mail_table.setRowCount(0)
 
         # 백그라운드 스레드로 메일 가져오기
         self.fetch_thread = EmailFetchThread(self.client)
@@ -160,28 +184,65 @@ class MainWindow(QMainWindow):
         self.fetch_thread.start()
 
     def on_emails_fetched(self, messages: List[Dict[str, Any]]) -> None:
-        """메일 가져오기 완료"""
+        """메일 가져오기 완료 시 호출"""
         self.messages = messages
-
-        # 메일 목록 표시
+        
+        # 정렬 비활성화 (데이터 입력 중)
+        self.mail_table.setSortingEnabled(False)
+        self.mail_table.setRowCount(len(messages))
+        
         for i, msg in enumerate(messages):
-            subject = msg.get("subject", "(제목 없음)")
-            sender = msg.get("sender", "알 수 없음")
-            received = msg.get("datetime_received", "")
-
-            # 날짜 포맷
+            # 0번 컬럼: 읽음 상태
+            is_read = msg.get('is_read', False)
+            read_item = QTableWidgetItem()
+            read_item.setText('⚪' if is_read else '🔵')
+            read_item.setTextAlignment(Qt.AlignCenter)
+            self.mail_table.setItem(i, 0, read_item)
+            
+            # 1번 컬럼: 날짜
+            received = msg.get('datetime_received', '')
             if received:
-                date_str = received.strftime("%Y-%m-%d %H:%M")
+                date_str = received.strftime('%m/%d %H:%M')
             else:
-                date_str = ""
-
-            # 리스트 아이템 생성
-            item_text = f"[{date_str}] {subject}\n보낸이: {sender}"
-            item = QListWidgetItem(item_text)
-            item.setData(Qt.UserRole, i)  # 메시지 인덱스 저장
-
-            self.mail_list.addItem(item)
-
+                date_str = ''
+            date_item = QTableWidgetItem(date_str)
+            date_item.setData(Qt.UserRole, received)  # 정렬용 원본 데이터
+            self.mail_table.setItem(i, 1, date_item)
+            
+            # 2번 컬럼: 제목
+            subject = msg.get('subject', '(제목 없음)')
+            subject_item = QTableWidgetItem(subject)
+            subject_item.setData(Qt.UserRole, i)  # 메시지 인덱스 저장
+            
+            # 안읽은 메일 굵게
+            if not is_read:
+                font = QFont()
+                font.setBold(True)
+                subject_item.setFont(font)
+            
+            self.mail_table.setItem(i, 2, subject_item)
+            
+            # 3번 컬럼: 보낸이
+            sender = msg.get('sender', '알 수 없음')
+            sender_item = QTableWidgetItem(sender)
+            if not is_read:
+                font = QFont()
+                font.setBold(True)
+                sender_item.setFont(font)
+            self.mail_table.setItem(i, 3, sender_item)
+            
+            # 4번 컬럼: 첨부파일
+            has_attachments = msg.get('has_attachments', False)
+            attach_item = QTableWidgetItem('📎' if has_attachments else '')
+            attach_item.setTextAlignment(Qt.AlignCenter)
+            self.mail_table.setItem(i, 4, attach_item)
+        
+        # 정렬 활성화
+        self.mail_table.setSortingEnabled(True)
+        
+        # 기본 정렬: 날짜 내림차순 (최신순)
+        self.mail_table.sortItems(1, Qt.DescendingOrder)
+        
         self.statusBar.showMessage(f"{len(messages)}개의 메일을 가져왔습니다.")
 
     def on_fetch_error(self, error: str) -> None:
@@ -189,36 +250,52 @@ class MainWindow(QMainWindow):
         self.statusBar.showMessage("메일 가져오기 실패")
         QMessageBox.critical(self, "오류", f"메일을 가져오는 중 오류 발생:\n{error}")
 
-    def on_mail_selected(self, item: QListWidgetItem) -> None:
-        """메일 선택 시"""
-        index = item.data(Qt.UserRole)
-        if index is not None and 0 <= index < len(self.messages):
-            msg = self.messages[index]
-
-            # 메일 내용 표시
-            subject = msg.get("subject", "(제목 없음)")
-            sender = msg.get("sender", "알 수 없음")
-            received = msg.get("datetime_received", "")
-            body = msg.get("body", "(내용 없음)")
-            has_attachments = msg.get("has_attachments", False)
-
-            # 날짜 포맷
-            if received:
-                date_str = received.strftime("%Y-%m-%d %H:%M:%S")
-            else:
-                date_str = "알 수 없음"
-
-            # HTML 형식으로 표시
-            html = f"""
-            <h2>{subject}</h2>
-            <p><b>보낸이:</b> {sender}</p>
-            <p><b>날짜:</b> {date_str}</p>
-            <p><b>첨부파일:</b> {'있음' if has_attachments else '없음'}</p>
-            <hr>
-            <pre>{body}</pre>
-            """
-
-            self.mail_viewer.setHtml(html)
+    def on_mail_row_clicked(self, row: int, column: int) -> None:
+        """테이블 행 클릭 시 호출"""
+        # 제목 컬럼에서 메시지 인덱스 가져오기
+        subject_item = self.mail_table.item(row, 2)
+        if not subject_item:
+            return
+        
+        index = subject_item.data(Qt.UserRole)
+        if index is None or not (0 <= index < len(self.messages)):
+            return
+        
+        msg = self.messages[index]
+        
+        # 메일 내용 표시
+        subject = msg.get('subject', '(제목 없음)')
+        sender = msg.get('sender', '알 수 없음')
+        received = msg.get('datetime_received', '')
+        body = msg.get('body', '(내용 없음)')
+        has_attachments = msg.get('has_attachments', False)
+        
+        if received:
+            date_str = received.strftime('%Y-%m-%d %H:%M:%S')
+        else:
+            date_str = '알 수 없음'
+        
+        html = f"""
+        <h2>{subject}</h2>
+        <p><b>보낸이:</b> {sender}</p>
+        <p><b>날짜:</b> {date_str}</p>
+        <p><b>첨부파일:</b> {'있음' if has_attachments else '없음'}</p>
+        <hr>
+        <pre>{body}</pre>
+        """
+        
+        self.mail_viewer.setHtml(html)
+        
+        # 읽음 상태로 변경
+        read_item = self.mail_table.item(row, 0)
+        if read_item:
+            read_item.setText('⚪')
+        
+        # 굵은 글씨 해제
+        subject_item.setFont(QFont())
+        sender_item = self.mail_table.item(row, 3)
+        if sender_item:
+            sender_item.setFont(QFont())
 
     def open_settings(self) -> None:
         """설정 대화상자 열기"""
