@@ -187,6 +187,10 @@ class MainWindow(QMainWindow):
         self.mail_table.setSortingEnabled(False)
         self.mail_table.setRowCount(len(messages))
 
+        # 굵은 글씨 폰트 미리 생성
+        bold_font = QFont()
+        bold_font.setBold(True)
+
         for i, msg in enumerate(messages):
             # 0번 컬럼: 읽음 상태
             is_read = msg.get("is_read", False)
@@ -212,9 +216,7 @@ class MainWindow(QMainWindow):
 
             # 안읽은 메일 굵게
             if not is_read:
-                font = QFont()
-                font.setBold(True)
-                subject_item.setFont(font)
+                subject_item.setFont(bold_font)
 
             self.mail_table.setItem(i, 2, subject_item)
 
@@ -222,9 +224,7 @@ class MainWindow(QMainWindow):
             sender = msg.get("sender", "알 수 없음")
             sender_item = QTableWidgetItem(sender)
             if not is_read:
-                font = QFont()
-                font.setBold(True)
-                sender_item.setFont(font)
+                sender_item.setFont(bold_font)
             self.mail_table.setItem(i, 3, sender_item)
 
             # 4번 컬럼: 첨부파일
