@@ -398,3 +398,93 @@ def test_on_emails_synced(mock_repo, qapp):
     # 메일이 로드되었는지 확인
     assert len(window.messages) == 1
     assert window.messages[0]["subject"] == "New Email"
+
+
+@patch("src.ui.main_window.MailRepository")
+def test_log_viewer_exists(mock_repo, qapp):
+    """로그 뷰어가 존재하는지 테스트"""
+    mock_repo_instance = MagicMock()
+    mock_repo_instance.get_all_emails.return_value = []
+    mock_repo.return_value = mock_repo_instance
+
+    window = MainWindow()
+    assert hasattr(window, "log_viewer")
+    assert window.log_viewer is not None
+    assert window.log_viewer.isReadOnly() is True
+
+
+@patch("src.ui.main_window.MailRepository")
+def test_clear_logs(mock_repo, qapp):
+    """로그 지우기 테스트"""
+    mock_repo_instance = MagicMock()
+    mock_repo_instance.get_all_emails.return_value = []
+    mock_repo.return_value = mock_repo_instance
+
+    window = MainWindow()
+
+    # 로그 추가
+    window.append_log("INFO", "Test log message")
+    assert window.log_viewer.toPlainText() != ""
+
+    # 로그 지우기
+    window.clear_logs()
+    assert window.log_viewer.toPlainText() == ""
+
+
+@patch("src.ui.main_window.MailRepository")
+def test_append_log_colors(mock_repo, qapp):
+    """로그 레벨별 색상 테스트"""
+    mock_repo_instance = MagicMock()
+    mock_repo_instance.get_all_emails.return_value = []
+    mock_repo.return_value = mock_repo_instance
+
+    window = MainWindow()
+
+    # 다양한 레벨의 로그 추가
+    window.append_log("DEBUG", "Debug message")
+    window.append_log("INFO", "Info message")
+    window.append_log("WARNING", "Warning message")
+    window.append_log("ERROR", "Error message")
+
+    # 로그가 추가되었는지 확인
+    log_text = window.log_viewer.toPlainText()
+    assert "Debug message" in log_text
+    assert "Info message" in log_text
+    assert "Warning message" in log_text
+    assert "Error message" in log_text
+
+
+def test_log_handler():
+    """로그 핸들러 테스트"""
+    from src.ui.main_window import QTextEditLogHandler
+
+    handler = QTextEditLogHandler()
+    assert handler is not None
+
+    # 시그널 테스트
+    signals_received = []
+
+    def capture_signal(level: str, message: str) -> None:
+        signals_received.append((level, message))
+
+    handler.log_signal.connect(capture_signal)
+
+    # 로그 레코드 생성 및 emit
+    import logging
+
+    record = logging.LogRecord(
+        name="test",
+        level=logging.INFO,
+        pathname="test.py",
+        lineno=1,
+        msg="Test message",
+        args=(),
+        exc_info=None,
+    )
+
+    handler.emit(record)
+
+    # 시그널이 발생했는지 확인
+    assert len(signals_received) == 1
+    assert signals_received[0][0] == "INFO"
+    assert "Test message" in signals_received[0][1]
