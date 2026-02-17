@@ -212,8 +212,10 @@ class MailRepository:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT COUNT(*) FROM emails")
-                count = cursor.fetchone()[0]
-                return count
+                result = cursor.fetchone()
+                if result:
+                    return int(result[0])
+                return 0
 
         except sqlite3.Error as e:
             logger.error(f"메일 개수 조회 실패: {e}")
