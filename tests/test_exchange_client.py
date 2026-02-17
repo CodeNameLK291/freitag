@@ -60,9 +60,7 @@ def test_exchange_client_with_email():
 @patch("src.exchange_client.Configuration")
 @patch("src.exchange_client.Credentials")
 @patch("src.exchange_client.Account")
-def test_connect_with_email(
-    mock_account_class, mock_credentials, mock_config_class, mock_config
-):
+def test_connect_with_email(mock_account_class, mock_credentials, mock_config_class, mock_config):
     """이메일 주소를 직접 제공한 경우 연결 테스트"""
     # Mock 설정
     mock_account_instance = MagicMock()
@@ -82,9 +80,7 @@ def test_connect_with_email(
 @patch("src.exchange_client.Configuration")
 @patch("src.exchange_client.Credentials")
 @patch("src.exchange_client.Account")
-def test_connect_success(
-    mock_account_class, mock_credentials, mock_config_class, mock_config
-):
+def test_connect_success(mock_account_class, mock_credentials, mock_config_class, mock_config):
     """연결 성공 테스트"""
     # Mock 설정
     mock_account_instance = MagicMock()
@@ -227,9 +223,7 @@ def test_get_inbox_messages_error(mock_account_class, mock_config):
     # Mock 계정 설정
     mock_account_instance = MagicMock()
     mock_account_instance.inbox.total_count = 1
-    mock_account_instance.inbox.all.return_value.filter.side_effect = Exception(
-        "Database error"
-    )
+    mock_account_instance.inbox.all.return_value.filter.side_effect = Exception("Database error")
     mock_account_class.return_value = mock_account_instance
 
     client = ExchangeClient()
@@ -291,9 +285,7 @@ def test_get_folder_list_error(mock_account_class, mock_config):
 @patch("src.exchange_client.Configuration")
 @patch("src.exchange_client.Credentials")
 @patch("src.exchange_client.Account")
-def test_disconnect(
-    mock_account_class, mock_credentials, mock_config_class, mock_config
-):
+def test_disconnect(mock_account_class, mock_credentials, mock_config_class, mock_config):
     """연결 종료 테스트"""
     # Mock 설정
     mock_account_instance = MagicMock()

@@ -144,6 +144,8 @@ class MailRepository:
 
                 for row in rows:
                     # datetime 문자열을 datetime 객체로 변환
+                    # Note: ISO 8601 문자열 저장 방식 사용 (가독성 우선)
+                    # 대량 메일 처리 시 INTEGER 타임스탬프 고려 가능
                     datetime_str = row["datetime_received"]
                     try:
                         datetime_obj = datetime.fromisoformat(datetime_str)

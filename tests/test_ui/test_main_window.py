@@ -84,9 +84,7 @@ def test_connect_to_server(mock_client, mock_msgbox, mock_repo, qapp) -> None:
 def test_email_fetch_thread() -> None:
     """이메일 가져오기 스레드 테스트"""
     mock_client = Mock()
-    mock_client.get_inbox_messages.return_value = [
-        {"subject": "Test", "sender": "test@test.com"}
-    ]
+    mock_client.get_inbox_messages.return_value = [{"subject": "Test", "sender": "test@test.com"}]
 
     thread = EmailFetchThread(mock_client)
     assert thread is not None
@@ -100,9 +98,7 @@ def test_email_fetch_thread() -> None:
 
     # 신호가 올바른 데이터로 발생했는지 확인
     assert len(finished_signal_received) == 1
-    assert finished_signal_received[0] == [
-        {"subject": "Test", "sender": "test@test.com"}
-    ]
+    assert finished_signal_received[0] == [{"subject": "Test", "sender": "test@test.com"}]
 
 
 def test_email_fetch_thread_with_progress() -> None:

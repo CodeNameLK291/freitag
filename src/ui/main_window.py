@@ -75,7 +75,8 @@ class MainWindow(QMainWindow):
         self.messages: List[Dict[str, Any]] = []
         self.fetch_thread: Optional[EmailFetchThread] = None
         self.mail_repo = MailRepository()  # SQLite 저장소
-        self.auto_connected = False  # 자동 연결 여부
+        self.auto_connected = False  # 자동 연결 성공 여부
+        self.is_auto_connecting = False  # 현재 자동 연결 중인지
 
         self.init_ui()
 
@@ -173,7 +174,7 @@ class MainWindow(QMainWindow):
         settings_action.triggered.connect(self.open_settings)
         toolbar.addAction(settings_action)
 
-    def showEvent(self, event) -> None:  # type: ignore
+    def showEvent(self, event) -> None:  # type: ignore  # PyQt5 event type
         """윈도우가 표시될 때 자동 연결 시도"""
         super().showEvent(event)
 
@@ -198,6 +199,7 @@ class MainWindow(QMainWindow):
 
     def auto_connect_and_sync(self) -> None:
         """자동 연결 및 동기화"""
+        self.is_auto_connecting = True
         try:
             self.statusBar.showMessage("서버 자동 연결 중...")
 
@@ -218,6 +220,8 @@ class MainWindow(QMainWindow):
         except Exception as e:
             logger.error(f"자동 연결 실패: {e}")
             self.statusBar.showMessage(f"자동 연결 실패: {str(e)}")
+        finally:
+            self.is_auto_connecting = False
 
     def sync_new_emails(self) -> None:
         """증분 동기화 - 새 메일만 가져오기"""
@@ -380,8 +384,8 @@ class MainWindow(QMainWindow):
         # 프로그레스 바 숨김
         self.progress_bar.setVisible(False)
         self.statusBar.showMessage("메일 가져오기 실패")
-        # 자동 연결 실패 시에는 상태바 메시지만 표시
-        if not self.auto_connected:
+        # 자동 연결 중인 경우에는 상태바 메시지만 표시, 수동 연결은 팝업 표시
+        if not self.is_auto_connecting:
             QMessageBox.critical(self, "오류", f"메일을 가져오는 중 오류 발생:\n{error}")
 
     def on_mail_row_clicked(self, row: int, column: int) -> None:
