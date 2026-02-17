@@ -31,7 +31,7 @@ def test_mail_repository_init(temp_db):
 
 def test_init_db_creates_tables(temp_db):
     """데이터베이스 테이블 생성 테스트"""
-    repo = MailRepository(temp_db)
+    _ = MailRepository(temp_db)
 
     # 테이블 존재 확인
     import sqlite3
@@ -41,18 +41,21 @@ def test_init_db_creates_tables(temp_db):
 
         # emails 테이블 확인
         cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='emails'"
+            "SELECT name FROM sqlite_master "
+            "WHERE type='table' AND name='emails'"
         )
         assert cursor.fetchone() is not None
 
         # 인덱스 확인
         cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_datetime_received'"
+            "SELECT name FROM sqlite_master "
+            "WHERE type='index' AND name='idx_datetime_received'"
         )
         assert cursor.fetchone() is not None
 
         cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_message_id'"
+            "SELECT name FROM sqlite_master "
+            "WHERE type='index' AND name='idx_message_id'"
         )
         assert cursor.fetchone() is not None
 

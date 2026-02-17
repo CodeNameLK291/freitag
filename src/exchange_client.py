@@ -168,9 +168,7 @@ class ExchangeClient:
                 mail_info = self._extract_message_info(msg)
                 mail_list.append(mail_info)
                 count_str = total_count if total_count else "?"
-                logger.debug(
-                    f"메일 추출 ({i}/{count_str}): " f"{mail_info['subject']}"
-                )
+                logger.debug(f"메일 추출 ({i}/{count_str}): " f"{mail_info['subject']}")
 
                 # 진행률 콜백 호출
                 if progress_callback and total_count:
