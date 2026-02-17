@@ -167,7 +167,10 @@ class ExchangeClient:
             for i, msg in enumerate(query, 1):
                 mail_info = self._extract_message_info(msg)
                 mail_list.append(mail_info)
-                logger.debug(f"메일 추출 ({i}/{total_count if total_count else '?'}): {mail_info['subject']}")
+                count_str = total_count if total_count else "?"
+                logger.debug(
+                    f"메일 추출 ({i}/{count_str}): " f"{mail_info['subject']}"
+                )
 
                 # 진행률 콜백 호출
                 if progress_callback and total_count:
@@ -195,10 +198,13 @@ class ExchangeClient:
             "subject": message.subject or "(제목 없음)",
             "sender": self._extract_email_address(message.sender),
             "sender_name": (
-                getattr(message.sender, "name", "Unknown") if message.sender else "Unknown"
+                getattr(message.sender, "name", "Unknown")
+                if message.sender
+                else "Unknown"
             ),
             "to_recipients": [
-                self._extract_email_address(r) for r in (message.to_recipients or [])
+                self._extract_email_address(r)
+                for r in (message.to_recipients or [])
             ],
             "cc_recipients": [
                 self._extract_email_address(r) for r in (message.cc_recipients or [])

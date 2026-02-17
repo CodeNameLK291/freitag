@@ -3,7 +3,6 @@
 import sqlite3
 from typing import List, Optional, Dict, Any
 from datetime import datetime
-from pathlib import Path
 from src.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -29,8 +28,7 @@ class MailRepository:
                 cursor = conn.cursor()
 
                 # emails 테이블 생성
-                cursor.execute(
-                    """
+                cursor.execute("""
                     CREATE TABLE IF NOT EXISTS emails (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         message_id TEXT UNIQUE NOT NULL,
@@ -42,23 +40,18 @@ class MailRepository:
                         has_attachments BOOLEAN DEFAULT 0,
                         created_at TEXT DEFAULT CURRENT_TIMESTAMP
                     )
-                """
-                )
+                """)
 
                 # 인덱스 생성
-                cursor.execute(
-                    """
+                cursor.execute("""
                     CREATE INDEX IF NOT EXISTS idx_datetime_received
                     ON emails(datetime_received)
-                """
-                )
+                """)
 
-                cursor.execute(
-                    """
+                cursor.execute("""
                     CREATE INDEX IF NOT EXISTS idx_message_id
                     ON emails(message_id)
-                """
-                )
+                """)
 
                 conn.commit()
                 logger.info(f"데이터베이스 초기화 완료: {self.db_path}")
@@ -97,7 +90,8 @@ class MailRepository:
                         cursor.execute(
                             """
                             INSERT OR IGNORE INTO emails
-                            (message_id, subject, sender, datetime_received, body, is_read, has_attachments)
+                            (message_id, subject, sender, datetime_received,
+                             body, is_read, has_attachments)
                             VALUES (?, ?, ?, ?, ?, ?, ?)
                         """,
                             (
@@ -138,14 +132,12 @@ class MailRepository:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
 
-                cursor.execute(
-                    """
+                cursor.execute("""
                     SELECT message_id, subject, sender, datetime_received,
                            body, is_read, has_attachments
                     FROM emails
                     ORDER BY datetime_received DESC
-                """
-                )
+                """)
 
                 rows = cursor.fetchall()
                 emails = []
@@ -188,14 +180,12 @@ class MailRepository:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
 
-                cursor.execute(
-                    """
+                cursor.execute("""
                     SELECT datetime_received
                     FROM emails
                     ORDER BY datetime_received DESC
                     LIMIT 1
-                """
-                )
+                """)
 
                 row = cursor.fetchone()
 
