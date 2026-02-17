@@ -139,7 +139,8 @@ def test_get_inbox_messages_success(mock_account_class, mock_config):
     # Mock 계정 설정
     mock_account_instance = MagicMock()
     mock_account_instance.inbox.total_count = 1
-    filter_obj = mock_account_instance.inbox.filter.return_value
+    all_obj = mock_account_instance.inbox.all.return_value
+    filter_obj = all_obj.filter.return_value
     order_obj = filter_obj.order_by.return_value
     order_obj.__getitem__.return_value = [mock_message]
     mock_account_class.return_value = mock_account_instance
@@ -152,6 +153,7 @@ def test_get_inbox_messages_success(mock_account_class, mock_config):
     assert len(messages) == 1
     assert messages[0]["subject"] == "Test Email"
     assert messages[0]["sender"] == "sender@test.com"
+    assert messages[0]["message_id"] == "msg123"
 
 
 def test_extract_email_address():
@@ -221,7 +223,7 @@ def test_get_inbox_messages_error(mock_account_class, mock_config):
     # Mock 계정 설정
     mock_account_instance = MagicMock()
     mock_account_instance.inbox.total_count = 1
-    mock_account_instance.inbox.filter.side_effect = Exception("Database error")
+    mock_account_instance.inbox.all.return_value.filter.side_effect = Exception("Database error")
     mock_account_class.return_value = mock_account_instance
 
     client = ExchangeClient()
@@ -320,7 +322,8 @@ def test_extract_message_info_with_none_subject(mock_account_class, mock_config)
     # Mock 계정 설정
     mock_account_instance = MagicMock()
     mock_account_instance.inbox.total_count = 1
-    filter_obj = mock_account_instance.inbox.filter.return_value
+    all_obj = mock_account_instance.inbox.all.return_value
+    filter_obj = all_obj.filter.return_value
     order_obj = filter_obj.order_by.return_value
     order_obj.__getitem__.return_value = [mock_message]
     mock_account_class.return_value = mock_account_instance
@@ -339,3 +342,142 @@ def test_extract_message_info_with_none_subject(mock_account_class, mock_config)
     assert messages[0]["to_recipients"] == []
     assert messages[0]["cc_recipients"] == []
     assert messages[0]["attachment_count"] == 0
+    assert messages[0]["message_id"] == "msg123"
+
+
+@patch("src.exchange_client.Account")
+def test_get_inbox_messages_full_fetch_mode(mock_account_class, mock_config):
+    """전체 메일 가져오기 모드 테스트 (limit=None, days_back=None)"""
+    # Mock 메시지 생성
+    mock_messages = []
+    for i in range(3):
+        msg = MagicMock()
+        msg.id = f"msg{i}"
+        msg.subject = f"Email {i}"
+        msg.sender.email_address = f"sender{i}@test.com"
+        msg.sender.name = f"Sender {i}"
+        msg.to_recipients = []
+        msg.cc_recipients = []
+        msg.body = f"Body {i}"
+        msg.text_body = f"Text {i}"
+        msg.datetime_received = datetime.now(timezone.utc)
+        msg.datetime_sent = datetime.now(timezone.utc)
+        msg.is_read = False
+        msg.importance = "Normal"
+        msg.has_attachments = False
+        msg.attachments = []
+        mock_messages.append(msg)
+
+    # Mock 계정 설정
+    mock_account_instance = MagicMock()
+    mock_account_instance.inbox.total_count = 3
+    all_obj = mock_account_instance.inbox.all.return_value
+    order_obj = all_obj.order_by.return_value
+    order_obj.__iter__.return_value = iter(mock_messages)
+    mock_account_class.return_value = mock_account_instance
+
+    client = ExchangeClient()
+    client.connect()
+
+    # limit=None, days_back=None로 전체 가져오기
+    messages = client.get_inbox_messages(limit=None, days_back=None)
+
+    assert len(messages) == 3
+    assert messages[0]["message_id"] == "msg0"
+    assert messages[1]["message_id"] == "msg1"
+    assert messages[2]["message_id"] == "msg2"
+
+
+@patch("src.exchange_client.Account")
+def test_get_inbox_messages_with_since_datetime(mock_account_class, mock_config):
+    """증분 동기화 테스트 (since_datetime 파라미터)"""
+    # Mock 메시지 생성
+    mock_message = MagicMock()
+    mock_message.id = "msg_new"
+    mock_message.subject = "New Email"
+    mock_message.sender.email_address = "sender@test.com"
+    mock_message.sender.name = "Sender"
+    mock_message.to_recipients = []
+    mock_message.cc_recipients = []
+    mock_message.body = "New body"
+    mock_message.text_body = "New text"
+    mock_message.datetime_received = datetime.now(timezone.utc)
+    mock_message.datetime_sent = datetime.now(timezone.utc)
+    mock_message.is_read = False
+    mock_message.importance = "Normal"
+    mock_message.has_attachments = False
+    mock_message.attachments = []
+
+    # Mock 계정 설정
+    mock_account_instance = MagicMock()
+    mock_account_instance.inbox.total_count = 1
+    all_obj = mock_account_instance.inbox.all.return_value
+    filter_obj = all_obj.filter.return_value
+    order_obj = filter_obj.order_by.return_value
+    order_obj.__getitem__.return_value = [mock_message]
+    mock_account_class.return_value = mock_account_instance
+
+    client = ExchangeClient()
+    client.connect()
+
+    # since_datetime 사용하여 증분 동기화
+    since = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    messages = client.get_inbox_messages(since_datetime=since)
+
+    assert len(messages) == 1
+    assert messages[0]["message_id"] == "msg_new"
+
+    # filter가 올바른 파라미터로 호출되었는지 확인
+    all_obj.filter.assert_called_once()
+
+
+@patch("src.exchange_client.Account")
+def test_get_inbox_messages_with_progress_callback(mock_account_class, mock_config):
+    """진행률 콜백 테스트"""
+    # Mock 메시지 생성
+    mock_messages = []
+    for i in range(5):
+        msg = MagicMock()
+        msg.id = f"msg{i}"
+        msg.subject = f"Email {i}"
+        msg.sender.email_address = f"sender{i}@test.com"
+        msg.sender.name = f"Sender {i}"
+        msg.to_recipients = []
+        msg.cc_recipients = []
+        msg.body = f"Body {i}"
+        msg.text_body = f"Text {i}"
+        msg.datetime_received = datetime.now(timezone.utc)
+        msg.datetime_sent = datetime.now(timezone.utc)
+        msg.is_read = False
+        msg.importance = "Normal"
+        msg.has_attachments = False
+        msg.attachments = []
+        mock_messages.append(msg)
+
+    # Mock 계정 설정
+    mock_account_instance = MagicMock()
+    mock_account_instance.inbox.total_count = 5
+    all_obj = mock_account_instance.inbox.all.return_value
+    filter_obj = all_obj.filter.return_value
+    order_obj = filter_obj.order_by.return_value
+    order_obj.count.return_value = 5
+    order_obj.__getitem__.return_value = mock_messages
+    order_obj.__iter__.return_value = iter(mock_messages)
+    mock_account_class.return_value = mock_account_instance
+
+    client = ExchangeClient()
+    client.connect()
+
+    # 진행률 추적
+    progress_calls = []
+
+    def progress_callback(current: int, total: int) -> None:
+        progress_calls.append((current, total))
+
+    messages = client.get_inbox_messages(limit=10, progress_callback=progress_callback)
+
+    assert len(messages) == 5
+    # 진행률 콜백이 호출되었는지 확인
+    assert len(progress_calls) == 5
+    assert progress_calls[0] == (1, 5)
+    assert progress_calls[4] == (5, 5)
