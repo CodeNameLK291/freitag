@@ -30,7 +30,7 @@ def test_main_window_creation(qapp) -> None:
 def test_main_window_ui_elements(qapp) -> None:
     """UI 요소 존재 확인"""
     window = MainWindow()
-    assert window.mail_list is not None
+    assert window.mail_table is not None
     assert window.mail_viewer is not None
     assert window.statusBar is not None
 
@@ -55,9 +55,7 @@ def test_connect_to_server(mock_client, mock_msgbox, qapp) -> None:
 def test_email_fetch_thread() -> None:
     """이메일 가져오기 스레드 테스트"""
     mock_client = Mock()
-    mock_client.get_inbox_messages.return_value = [
-        {"subject": "Test", "sender": "test@test.com"}
-    ]
+    mock_client.get_inbox_messages.return_value = [{"subject": "Test", "sender": "test@test.com"}]
 
     thread = EmailFetchThread(mock_client)
     assert thread is not None
@@ -71,9 +69,7 @@ def test_email_fetch_thread() -> None:
 
     # 신호가 올바른 데이터로 발생했는지 확인
     assert len(finished_signal_received) == 1
-    assert finished_signal_received[0] == [
-        {"subject": "Test", "sender": "test@test.com"}
-    ]
+    assert finished_signal_received[0] == [{"subject": "Test", "sender": "test@test.com"}]
 
 
 def test_email_fetch_thread_error() -> None:
@@ -93,3 +89,55 @@ def test_email_fetch_thread_error() -> None:
     # 에러 신호가 발생했는지 확인
     assert len(error_signal_received) == 1
     assert "Connection error" in error_signal_received[0]
+
+
+def test_mail_table_exists(qapp):
+    """메일 테이블이 존재하는지 테스트"""
+    window = MainWindow()
+    assert hasattr(window, "mail_table")
+    assert window.mail_table.columnCount() == 5
+
+
+def test_mail_table_headers(qapp):
+    """테이블 헤더 테스트"""
+    window = MainWindow()
+    headers = [window.mail_table.horizontalHeaderItem(i).text() for i in range(5)]
+    assert "" in headers  # 읽음 상태
+    assert "날짜" in headers
+    assert "제목" in headers
+    assert "보낸이" in headers
+    assert "📎" in headers
+
+
+def test_mail_table_population(qapp):
+    """메일 데이터로 테이블 채우기 테스트"""
+    from datetime import datetime, timezone
+
+    window = MainWindow()
+
+    mock_messages = [
+        {
+            "subject": "Test Email 1",
+            "sender": "test1@example.com",
+            "datetime_received": datetime.now(timezone.utc),
+            "body": "Body 1",
+            "has_attachments": True,
+            "is_read": False,
+        },
+        {
+            "subject": "Test Email 2",
+            "sender": "test2@example.com",
+            "datetime_received": datetime.now(timezone.utc),
+            "body": "Body 2",
+            "has_attachments": False,
+            "is_read": True,
+        },
+    ]
+
+    window.on_emails_fetched(mock_messages)
+
+    assert window.mail_table.rowCount() == 2
+    assert window.mail_table.item(0, 2).text() == "Test Email 1"
+    assert window.mail_table.item(1, 2).text() == "Test Email 2"
+    assert window.mail_table.item(0, 0).text() == "🔵"  # 안읽음
+    assert window.mail_table.item(1, 0).text() == "⚪"  # 읽음
