@@ -30,9 +30,7 @@ class EmailFetchThread(QThread):
     finished = pyqtSignal(list)
     error = pyqtSignal(str)
 
-    def __init__(
-        self, client: ExchangeClient, limit: int = 50, days_back: int = 7
-    ) -> None:
+    def __init__(self, client: ExchangeClient, limit: int = 50, days_back: int = 7) -> None:
         super().__init__()
         self.client = client
         self.limit = limit
@@ -41,9 +39,7 @@ class EmailFetchThread(QThread):
     def run(self) -> None:
         """메일 가져오기 실행"""
         try:
-            messages = self.client.get_inbox_messages(
-                limit=self.limit, days_back=self.days_back
-            )
+            messages = self.client.get_inbox_messages(limit=self.limit, days_back=self.days_back)
             self.finished.emit(messages)
         except Exception as e:
             logger.error(f"메일 가져오기 실패: {e}")
@@ -83,29 +79,29 @@ class MainWindow(QMainWindow):
         # 왼쪽: 메일 테이블
         self.mail_table = QTableWidget()
         self.mail_table.setColumnCount(5)
-        self.mail_table.setHorizontalHeaderLabels(['', '날짜', '제목', '보낸이', '📎'])
-        
+        self.mail_table.setHorizontalHeaderLabels(["", "날짜", "제목", "보낸이", "📎"])
+
         # 정렬 활성화
         self.mail_table.setSortingEnabled(True)
-        
+
         # 선택 모드 설정
         self.mail_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.mail_table.setSelectionMode(QTableWidget.SingleSelection)
-        
+
         # 편집 불가
         self.mail_table.setEditTriggers(QTableWidget.NoEditTriggers)
-        
+
         # 헤더 설정
         header = self.mail_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # 읽음 상태
         header.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # 날짜
-        header.setSectionResizeMode(2, QHeaderView.Stretch)           # 제목
+        header.setSectionResizeMode(2, QHeaderView.Stretch)  # 제목
         header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # 보낸이
         header.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # 첨부
-        
+
         # 행 클릭 이벤트
         self.mail_table.cellClicked.connect(self.on_mail_row_clicked)
-        
+
         splitter.addWidget(self.mail_table)
 
         # 오른쪽: 메일 내용
@@ -186,63 +182,63 @@ class MainWindow(QMainWindow):
     def on_emails_fetched(self, messages: List[Dict[str, Any]]) -> None:
         """메일 가져오기 완료 시 호출"""
         self.messages = messages
-        
+
         # 정렬 비활성화 (데이터 입력 중)
         self.mail_table.setSortingEnabled(False)
         self.mail_table.setRowCount(len(messages))
-        
+
         for i, msg in enumerate(messages):
             # 0번 컬럼: 읽음 상태
-            is_read = msg.get('is_read', False)
+            is_read = msg.get("is_read", False)
             read_item = QTableWidgetItem()
-            read_item.setText('⚪' if is_read else '🔵')
+            read_item.setText("⚪" if is_read else "🔵")
             read_item.setTextAlignment(Qt.AlignCenter)
             self.mail_table.setItem(i, 0, read_item)
-            
+
             # 1번 컬럼: 날짜
-            received = msg.get('datetime_received', '')
+            received = msg.get("datetime_received", "")
             if received:
-                date_str = received.strftime('%m/%d %H:%M')
+                date_str = received.strftime("%m/%d %H:%M")
             else:
-                date_str = ''
+                date_str = ""
             date_item = QTableWidgetItem(date_str)
             date_item.setData(Qt.UserRole, received)  # 정렬용 원본 데이터
             self.mail_table.setItem(i, 1, date_item)
-            
+
             # 2번 컬럼: 제목
-            subject = msg.get('subject', '(제목 없음)')
+            subject = msg.get("subject", "(제목 없음)")
             subject_item = QTableWidgetItem(subject)
             subject_item.setData(Qt.UserRole, i)  # 메시지 인덱스 저장
-            
+
             # 안읽은 메일 굵게
             if not is_read:
                 font = QFont()
                 font.setBold(True)
                 subject_item.setFont(font)
-            
+
             self.mail_table.setItem(i, 2, subject_item)
-            
+
             # 3번 컬럼: 보낸이
-            sender = msg.get('sender', '알 수 없음')
+            sender = msg.get("sender", "알 수 없음")
             sender_item = QTableWidgetItem(sender)
             if not is_read:
                 font = QFont()
                 font.setBold(True)
                 sender_item.setFont(font)
             self.mail_table.setItem(i, 3, sender_item)
-            
+
             # 4번 컬럼: 첨부파일
-            has_attachments = msg.get('has_attachments', False)
-            attach_item = QTableWidgetItem('📎' if has_attachments else '')
+            has_attachments = msg.get("has_attachments", False)
+            attach_item = QTableWidgetItem("📎" if has_attachments else "")
             attach_item.setTextAlignment(Qt.AlignCenter)
             self.mail_table.setItem(i, 4, attach_item)
-        
+
         # 정렬 활성화
         self.mail_table.setSortingEnabled(True)
-        
+
         # 기본 정렬: 날짜 내림차순 (최신순)
         self.mail_table.sortItems(1, Qt.DescendingOrder)
-        
+
         self.statusBar.showMessage(f"{len(messages)}개의 메일을 가져왔습니다.")
 
     def on_fetch_error(self, error: str) -> None:
@@ -256,25 +252,25 @@ class MainWindow(QMainWindow):
         subject_item = self.mail_table.item(row, 2)
         if not subject_item:
             return
-        
+
         index = subject_item.data(Qt.UserRole)
         if index is None or not (0 <= index < len(self.messages)):
             return
-        
+
         msg = self.messages[index]
-        
+
         # 메일 내용 표시
-        subject = msg.get('subject', '(제목 없음)')
-        sender = msg.get('sender', '알 수 없음')
-        received = msg.get('datetime_received', '')
-        body = msg.get('body', '(내용 없음)')
-        has_attachments = msg.get('has_attachments', False)
-        
+        subject = msg.get("subject", "(제목 없음)")
+        sender = msg.get("sender", "알 수 없음")
+        received = msg.get("datetime_received", "")
+        body = msg.get("body", "(내용 없음)")
+        has_attachments = msg.get("has_attachments", False)
+
         if received:
-            date_str = received.strftime('%Y-%m-%d %H:%M:%S')
+            date_str = received.strftime("%Y-%m-%d %H:%M:%S")
         else:
-            date_str = '알 수 없음'
-        
+            date_str = "알 수 없음"
+
         html = f"""
         <h2>{subject}</h2>
         <p><b>보낸이:</b> {sender}</p>
@@ -283,14 +279,14 @@ class MainWindow(QMainWindow):
         <hr>
         <pre>{body}</pre>
         """
-        
+
         self.mail_viewer.setHtml(html)
-        
+
         # 읽음 상태로 변경
         read_item = self.mail_table.item(row, 0)
         if read_item:
-            read_item.setText('⚪')
-        
+            read_item.setText("⚪")
+
         # 굵은 글씨 해제
         subject_item.setFont(QFont())
         sender_item = self.mail_table.item(row, 3)
