@@ -77,6 +77,10 @@ def test_connect_to_server(mock_client, mock_msgbox, mock_repo, qapp) -> None:
 
     window.connect_to_server()
 
+    # 스레드의 run() 메서드를 직접 호출하여 동기적으로 테스트
+    if window.connect_thread:
+        window.connect_thread.run()
+
     assert window.client is not None
     mock_msgbox.information.assert_called_once()
 
@@ -84,7 +88,9 @@ def test_connect_to_server(mock_client, mock_msgbox, mock_repo, qapp) -> None:
 def test_email_fetch_thread() -> None:
     """이메일 가져오기 스레드 테스트"""
     mock_client = Mock()
-    mock_client.get_inbox_messages.return_value = [{"subject": "Test", "sender": "test@test.com"}]
+    mock_client.get_inbox_messages.return_value = [
+        {"subject": "Test", "sender": "test@test.com"}
+    ]
 
     thread = EmailFetchThread(mock_client)
     assert thread is not None
@@ -98,7 +104,9 @@ def test_email_fetch_thread() -> None:
 
     # 신호가 올바른 데이터로 발생했는지 확인
     assert len(finished_signal_received) == 1
-    assert finished_signal_received[0] == [{"subject": "Test", "sender": "test@test.com"}]
+    assert finished_signal_received[0] == [
+        {"subject": "Test", "sender": "test@test.com"}
+    ]
 
 
 def test_email_fetch_thread_with_progress() -> None:
@@ -157,6 +165,77 @@ def test_email_fetch_thread_error() -> None:
     # 에러 신호가 발생했는지 확인
     assert len(error_signal_received) == 1
     assert "Connection error" in error_signal_received[0]
+
+
+def test_connect_thread() -> None:
+    """서버 연결 스레드 테스트"""
+    mock_client = Mock()
+    mock_client.connect.return_value = True
+
+    from src.ui.main_window import ConnectThread
+
+    thread = ConnectThread(mock_client)
+    assert thread is not None
+
+    # 스레드 실행 테스트
+    finished_signal_received = []
+    thread.finished.connect(lambda success: finished_signal_received.append(success))
+
+    # run 메소드 직접 호출
+    thread.run()
+
+    # 신호가 올바른 데이터로 발생했는지 확인
+    assert len(finished_signal_received) == 1
+    assert finished_signal_received[0] is True
+
+
+def test_connect_thread_failure() -> None:
+    """서버 연결 스레드 실패 테스트"""
+    mock_client = Mock()
+    mock_client.connect.return_value = False
+
+    from src.ui.main_window import ConnectThread
+
+    thread = ConnectThread(mock_client)
+
+    # 신호 테스트
+    finished_signal_received = []
+    thread.finished.connect(lambda success: finished_signal_received.append(success))
+
+    # run 메소드 직접 호출
+    thread.run()
+
+    # 신호가 실패로 발생했는지 확인
+    assert len(finished_signal_received) == 1
+    assert finished_signal_received[0] is False
+
+
+def test_connect_thread_error() -> None:
+    """서버 연결 스레드 에러 테스트"""
+    mock_client = Mock()
+    mock_client.connect.side_effect = Exception("Network error")
+
+    from src.ui.main_window import ConnectThread
+
+    thread = ConnectThread(mock_client)
+
+    # 에러 신호 테스트
+    error_signal_received = []
+    thread.error.connect(lambda err: error_signal_received.append(err))
+
+    finished_signal_received = []
+    thread.finished.connect(lambda success: finished_signal_received.append(success))
+
+    # run 메소드 직접 호출
+    thread.run()
+
+    # 에러 신호가 발생했는지 확인
+    assert len(error_signal_received) == 1
+    assert "Network error" in error_signal_received[0]
+
+    # finished 신호도 False로 발생했는지 확인
+    assert len(finished_signal_received) == 1
+    assert finished_signal_received[0] is False
 
 
 @patch("src.ui.main_window.MailRepository")
@@ -319,3 +398,93 @@ def test_on_emails_synced(mock_repo, qapp):
     # 메일이 로드되었는지 확인
     assert len(window.messages) == 1
     assert window.messages[0]["subject"] == "New Email"
+
+
+@patch("src.ui.main_window.MailRepository")
+def test_log_viewer_exists(mock_repo, qapp):
+    """로그 뷰어가 존재하는지 테스트"""
+    mock_repo_instance = MagicMock()
+    mock_repo_instance.get_all_emails.return_value = []
+    mock_repo.return_value = mock_repo_instance
+
+    window = MainWindow()
+    assert hasattr(window, "log_viewer")
+    assert window.log_viewer is not None
+    assert window.log_viewer.isReadOnly() is True
+
+
+@patch("src.ui.main_window.MailRepository")
+def test_clear_logs(mock_repo, qapp):
+    """로그 지우기 테스트"""
+    mock_repo_instance = MagicMock()
+    mock_repo_instance.get_all_emails.return_value = []
+    mock_repo.return_value = mock_repo_instance
+
+    window = MainWindow()
+
+    # 로그 추가
+    window.append_log("INFO", "Test log message")
+    assert window.log_viewer.toPlainText() != ""
+
+    # 로그 지우기
+    window.clear_logs()
+    assert window.log_viewer.toPlainText() == ""
+
+
+@patch("src.ui.main_window.MailRepository")
+def test_append_log_colors(mock_repo, qapp):
+    """로그 레벨별 색상 테스트"""
+    mock_repo_instance = MagicMock()
+    mock_repo_instance.get_all_emails.return_value = []
+    mock_repo.return_value = mock_repo_instance
+
+    window = MainWindow()
+
+    # 다양한 레벨의 로그 추가
+    window.append_log("DEBUG", "Debug message")
+    window.append_log("INFO", "Info message")
+    window.append_log("WARNING", "Warning message")
+    window.append_log("ERROR", "Error message")
+
+    # 로그가 추가되었는지 확인
+    log_text = window.log_viewer.toPlainText()
+    assert "Debug message" in log_text
+    assert "Info message" in log_text
+    assert "Warning message" in log_text
+    assert "Error message" in log_text
+
+
+def test_log_handler():
+    """로그 핸들러 테스트"""
+    from src.ui.main_window import QTextEditLogHandler
+
+    handler = QTextEditLogHandler()
+    assert handler is not None
+
+    # 시그널 테스트
+    signals_received = []
+
+    def capture_signal(level: str, message: str) -> None:
+        signals_received.append((level, message))
+
+    handler.log_signal.connect(capture_signal)
+
+    # 로그 레코드 생성 및 emit
+    import logging
+
+    record = logging.LogRecord(
+        name="test",
+        level=logging.INFO,
+        pathname="test.py",
+        lineno=1,
+        msg="Test message",
+        args=(),
+        exc_info=None,
+    )
+
+    handler.emit(record)
+
+    # 시그널이 발생했는지 확인
+    assert len(signals_received) == 1
+    assert signals_received[0][0] == "INFO"
+    assert "Test message" in signals_received[0][1]

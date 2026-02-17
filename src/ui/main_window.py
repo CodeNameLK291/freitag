@@ -1,11 +1,13 @@
 """메인 윈도우 모듈"""
 
+import logging
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from PyQt5.QtWidgets import (
     QMainWindow,
     QWidget,
     QVBoxLayout,
+    QHBoxLayout,
     QTableWidget,
     QTableWidgetItem,
     QHeaderView,
@@ -16,15 +18,57 @@ from PyQt5.QtWidgets import (
     QToolBar,
     QAction,
     QProgressBar,
+    QPushButton,
+    QLabel,
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QCloseEvent, QFont
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject
+from PyQt5.QtGui import QCloseEvent, QFont, QTextCursor, QColor
 from src.exchange_client import ExchangeClient
 from src.mail_db import MailRepository
-from src.utils.logger import setup_logger
+from src.utils.logger import setup_logger, add_ui_handler
 from src.ui.settings_dialog import SettingsDialog
 
 logger = setup_logger(__name__)
+
+
+class QTextEditLogHandler(logging.Handler, QObject):
+    """QTextEdit에 로그를 출력하는 핸들러"""
+
+    log_signal = pyqtSignal(str, str)  # (level, message)
+
+    def __init__(self) -> None:
+        logging.Handler.__init__(self)
+        QObject.__init__(self)
+
+    def emit(self, record: logging.LogRecord) -> None:
+        """로그 레코드를 처리하여 시그널 발생"""
+        try:
+            msg = self.format(record)
+            level = record.levelname
+            self.log_signal.emit(level, msg)
+        except Exception:
+            self.handleError(record)
+
+
+class ConnectThread(QThread):
+    """서버 연결을 백그라운드에서 수행하는 스레드"""
+
+    finished = pyqtSignal(bool)  # 연결 성공/실패
+    error = pyqtSignal(str)  # 에러 메시지
+
+    def __init__(self, client: ExchangeClient) -> None:
+        super().__init__()
+        self.client = client
+
+    def run(self) -> None:
+        """서버 연결 실행"""
+        try:
+            success = self.client.connect()
+            self.finished.emit(success)
+        except Exception as e:
+            logger.error(f"연결 실패: {e}")
+            self.error.emit(str(e))
+            self.finished.emit(False)
 
 
 class EmailFetchThread(QThread):
@@ -74,11 +118,18 @@ class MainWindow(QMainWindow):
         self.client: Optional[ExchangeClient] = None
         self.messages: List[Dict[str, Any]] = []
         self.fetch_thread: Optional[EmailFetchThread] = None
+        self.connect_thread: Optional[ConnectThread] = None
         self.mail_repo = MailRepository()  # SQLite 저장소
         self.auto_connected = False  # 자동 연결 성공 여부
         self.is_auto_connecting = False  # 현재 자동 연결 중인지
 
+        # 로그 핸들러 생성 (UI 초기화 전)
+        self.log_handler = QTextEditLogHandler()
+
         self.init_ui()
+
+        # 로그 핸들러를 로거에 추가 (UI 초기화 후)
+        self.setup_log_handler()
 
         # DB에서 기존 메일 로드
         self.load_emails_from_db()
@@ -99,8 +150,16 @@ class MainWindow(QMainWindow):
         main_layout = QVBoxLayout()
         central_widget.setLayout(main_layout)
 
-        # 스플리터 (좌우 분할)
-        splitter = QSplitter(Qt.Horizontal)
+        # 수직 스플리터 (메일 영역 / 로그 영역)
+        vertical_splitter = QSplitter(Qt.Vertical)
+
+        # === 상단: 메일 영역 ===
+        mail_widget = QWidget()
+        mail_layout = QVBoxLayout()
+        mail_widget.setLayout(mail_layout)
+
+        # 스플리터 (좌우 분할: 메일 테이블 / 메일 내용)
+        horizontal_splitter = QSplitter(Qt.Horizontal)
 
         # 왼쪽: 메일 테이블
         self.mail_table = QTableWidget()
@@ -119,7 +178,7 @@ class MainWindow(QMainWindow):
 
         # 헤더 설정
         header = self.mail_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # 읽음 상태
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # 읽음
         header.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # 날짜
         header.setSectionResizeMode(2, QHeaderView.Stretch)  # 제목
         header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # 보낸이
@@ -128,24 +187,64 @@ class MainWindow(QMainWindow):
         # 행 클릭 이벤트
         self.mail_table.cellClicked.connect(self.on_mail_row_clicked)
 
-        splitter.addWidget(self.mail_table)
+        horizontal_splitter.addWidget(self.mail_table)
 
         # 오른쪽: 메일 내용
         self.mail_viewer = QTextEdit()
         self.mail_viewer.setReadOnly(True)
-        splitter.addWidget(self.mail_viewer)
+        horizontal_splitter.addWidget(self.mail_viewer)
 
         # 스플리터 비율 설정 (1:2)
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 2)
+        horizontal_splitter.setStretchFactor(0, 1)
+        horizontal_splitter.setStretchFactor(1, 2)
 
-        main_layout.addWidget(splitter)
+        mail_layout.addWidget(horizontal_splitter)
 
         # 프로그레스 바
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
         self.progress_bar.setTextVisible(True)
-        main_layout.addWidget(self.progress_bar)
+        mail_layout.addWidget(self.progress_bar)
+
+        vertical_splitter.addWidget(mail_widget)
+
+        # === 하단: 로그 뷰어 ===
+        log_widget = QWidget()
+        log_layout = QVBoxLayout()
+        log_layout.setContentsMargins(0, 0, 0, 0)
+        log_widget.setLayout(log_layout)
+
+        # 로그 헤더 (제목 + 버튼)
+        log_header_layout = QHBoxLayout()
+        log_header_layout.setContentsMargins(5, 5, 5, 5)
+
+        log_label = QLabel("📋 로그")
+        log_label_font = QFont()
+        log_label_font.setBold(True)
+        log_label.setFont(log_label_font)
+        log_header_layout.addWidget(log_label)
+
+        log_header_layout.addStretch()
+
+        self.clear_log_button = QPushButton("지우기")
+        self.clear_log_button.clicked.connect(self.clear_logs)
+        log_header_layout.addWidget(self.clear_log_button)
+
+        log_layout.addLayout(log_header_layout)
+
+        # 로그 텍스트 영역
+        self.log_viewer = QTextEdit()
+        self.log_viewer.setReadOnly(True)
+        self.log_viewer.setMaximumHeight(200)
+        log_layout.addWidget(self.log_viewer)
+
+        vertical_splitter.addWidget(log_widget)
+
+        # 수직 스플리터 비율 (메일:로그 = 5:1)
+        vertical_splitter.setStretchFactor(0, 5)
+        vertical_splitter.setStretchFactor(1, 1)
+
+        main_layout.addWidget(vertical_splitter)
 
         # 상태바
         self.statusBar = QStatusBar()
@@ -158,9 +257,9 @@ class MainWindow(QMainWindow):
         self.addToolBar(toolbar)
 
         # 연결 버튼
-        connect_action = QAction("연결", self)
-        connect_action.triggered.connect(self.connect_to_server)
-        toolbar.addAction(connect_action)
+        self.connect_action = QAction("연결", self)
+        self.connect_action.triggered.connect(self.connect_to_server)
+        toolbar.addAction(self.connect_action)
 
         # 새로고침 버튼
         refresh_action = QAction("새로고침", self)
@@ -200,28 +299,35 @@ class MainWindow(QMainWindow):
     def auto_connect_and_sync(self) -> None:
         """자동 연결 및 동기화"""
         self.is_auto_connecting = True
-        try:
-            self.statusBar.showMessage("서버 자동 연결 중...")
+        self.statusBar.showMessage("서버 자동 연결 중...")
 
-            # ExchangeClient 생성
-            self.client = ExchangeClient()
+        # ExchangeClient 생성
+        self.client = ExchangeClient()
 
-            # 연결 시도
-            if self.client.connect():
-                self.statusBar.showMessage("연결 성공! 새 메일 확인 중...")
-                logger.info("서버 자동 연결 성공")
+        # ConnectThread로 연결 시도
+        self.connect_thread = ConnectThread(self.client)
+        self.connect_thread.finished.connect(self.on_auto_connect_finished)
+        self.connect_thread.error.connect(self.on_connect_error)
+        self.connect_thread.start()
 
-                # 증분 동기화 (마지막 메일 이후)
-                self.sync_new_emails()
-            else:
-                self.statusBar.showMessage("자동 연결 실패 - 수동 연결을 사용하세요")
-                logger.warning("서버 자동 연결 실패")
+    def on_auto_connect_finished(self, success: bool) -> None:
+        """자동 연결 완료 시 호출"""
+        if success:
+            self.statusBar.showMessage("연결 성공! 새 메일 확인 중...")
+            logger.info("서버 자동 연결 성공")
 
-        except Exception as e:
-            logger.error(f"자동 연결 실패: {e}")
-            self.statusBar.showMessage(f"자동 연결 실패: {str(e)}")
-        finally:
+            # 증분 동기화 (마지막 메일 이후)
+            self.sync_new_emails()
+        else:
+            self.statusBar.showMessage("자동 연결 실패 - 수동 연결을 사용하세요")
+            logger.warning("서버 자동 연결 실패")
             self.is_auto_connecting = False
+
+    def on_connect_error(self, error: str) -> None:
+        """연결 에러 시 호출"""
+        logger.error(f"자동 연결 실패: {error}")
+        self.statusBar.showMessage(f"자동 연결 실패: {error}")
+        self.is_auto_connecting = False
 
     def sync_new_emails(self) -> None:
         """증분 동기화 - 새 메일만 가져오기"""
@@ -247,6 +353,7 @@ class MainWindow(QMainWindow):
         # 프로그레스 바 표시
         self.progress_bar.setVisible(True)
         self.progress_bar.setValue(0)
+        self.progress_bar.setFormat("0/? (메일 확인 중...)")
 
         self.fetch_thread.finished.connect(self.on_emails_synced)
         self.fetch_thread.error.connect(self.on_fetch_error)
@@ -255,26 +362,37 @@ class MainWindow(QMainWindow):
 
     def connect_to_server(self) -> None:
         """Exchange 서버에 연결 (수동)"""
-        try:
-            self.statusBar.showMessage("서버 연결 중...")
+        self.statusBar.showMessage("서버 연결 중...")
+        self.connect_action.setEnabled(False)  # 연결 버튼 비활성화
 
-            # ExchangeClient 생성
-            self.client = ExchangeClient()
+        # ExchangeClient 생성
+        self.client = ExchangeClient()
 
-            # 연결 시도
-            if self.client.connect():
-                self.statusBar.showMessage("연결 성공!")
-                QMessageBox.information(self, "성공", "Exchange 서버에 연결되었습니다.")
-                # 수동 연결 후 증분 동기화
-                self.sync_new_emails()
-            else:
-                self.statusBar.showMessage("연결 실패")
-                QMessageBox.warning(self, "실패", "서버 연결에 실패했습니다.")
+        # ConnectThread로 연결 시도
+        self.connect_thread = ConnectThread(self.client)
+        self.connect_thread.finished.connect(self.on_manual_connect_finished)
+        self.connect_thread.error.connect(self.on_manual_connect_error)
+        self.connect_thread.start()
 
-        except Exception as e:
-            logger.error(f"연결 실패: {e}")
+    def on_manual_connect_finished(self, success: bool) -> None:
+        """수동 연결 완료 시 호출"""
+        self.connect_action.setEnabled(True)  # 연결 버튼 활성화
+
+        if success:
+            self.statusBar.showMessage("연결 성공!")
+            QMessageBox.information(self, "성공", "Exchange 서버에 연결되었습니다.")
+            # 수동 연결 후 증분 동기화
+            self.sync_new_emails()
+        else:
             self.statusBar.showMessage("연결 실패")
-            QMessageBox.critical(self, "오류", f"연결 중 오류 발생:\n{str(e)}")
+            QMessageBox.warning(self, "실패", "서버 연결에 실패했습니다.")
+
+    def on_manual_connect_error(self, error: str) -> None:
+        """수동 연결 에러 시 호출"""
+        self.connect_action.setEnabled(True)  # 연결 버튼 활성화
+        logger.error(f"연결 실패: {error}")
+        self.statusBar.showMessage("연결 실패")
+        QMessageBox.critical(self, "오류", f"연결 중 오류 발생:\n{error}")
 
     def refresh_emails(self) -> None:
         """메일 목록 새로고침 (수동)"""
@@ -303,6 +421,10 @@ class MainWindow(QMainWindow):
         """새 메일 동기화 완료 시 호출"""
         # 프로그레스 바 숨김
         self.progress_bar.setVisible(False)
+
+        # 자동 연결 플래그 해제
+        if self.is_auto_connecting:
+            self.is_auto_connecting = False
 
         if new_messages:
             # DB에 저장
@@ -383,6 +505,11 @@ class MainWindow(QMainWindow):
         """메일 가져오기 실패"""
         # 프로그레스 바 숨김
         self.progress_bar.setVisible(False)
+
+        # 자동 연결 플래그 해제
+        if self.is_auto_connecting:
+            self.is_auto_connecting = False
+
         self.statusBar.showMessage("메일 가져오기 실패")
         # 자동 연결 중인 경우에는 상태바 메시지만 표시, 수동 연결은 팝업 표시
         if not self.is_auto_connecting:
@@ -442,8 +569,71 @@ class MainWindow(QMainWindow):
             # 설정 저장됨
             self.statusBar.showMessage("설정이 저장되었습니다.")
 
+    def setup_log_handler(self) -> None:
+        """로그 핸들러 설정"""
+        # 로그 포맷터 설정
+        formatter = logging.Formatter(
+            "%(asctime)s [%(levelname)s] %(message)s",
+            datefmt="%H:%M:%S",
+        )
+        self.log_handler.setFormatter(formatter)
+
+        # 시그널 연결
+        self.log_handler.log_signal.connect(self.append_log)
+
+        # 루트 로거에 핸들러 추가 (모든 로그 캡처)
+        root_logger = logging.getLogger()
+        add_ui_handler(root_logger, self.log_handler)
+
+    def append_log(self, level: str, message: str) -> None:
+        """로그 메시지를 로그 뷰어에 추가"""
+        # 로그 레벨별 색상 설정
+        color_map = {
+            "DEBUG": QColor(128, 128, 128),  # 회색
+            "INFO": QColor(0, 0, 0),  # 검정
+            "WARNING": QColor(255, 140, 0),  # 주황
+            "ERROR": QColor(255, 0, 0),  # 빨강
+            "CRITICAL": QColor(139, 0, 0),  # 진한 빨강
+        }
+
+        # 최대 라인 수 제한 (1000줄)
+        max_lines = 1000
+        if self.log_viewer.document().lineCount() > max_lines:
+            # 처음 100줄 삭제
+            cursor = self.log_viewer.textCursor()
+            cursor.movePosition(QTextCursor.Start)
+            for _ in range(100):
+                cursor.select(QTextCursor.LineUnderCursor)
+                cursor.removeSelectedText()
+                cursor.deleteChar()  # 줄바꿈 문자 삭제
+
+        # 로그 추가
+        cursor = self.log_viewer.textCursor()
+        cursor.movePosition(QTextCursor.End)
+
+        # 색상 설정
+        color = color_map.get(level, QColor(0, 0, 0))
+        text_format = cursor.charFormat()
+        text_format.setForeground(color)
+        cursor.setCharFormat(text_format)
+
+        # 텍스트 삽입
+        cursor.insertText(message + "\n")
+
+        # 자동 스크롤 (맨 아래로)
+        self.log_viewer.setTextCursor(cursor)
+        self.log_viewer.ensureCursorVisible()
+
+    def clear_logs(self) -> None:
+        """로그 지우기"""
+        self.log_viewer.clear()
+
     def closeEvent(self, event: QCloseEvent) -> None:
         """윈도우 닫기 전"""
+        # 로그 핸들러 제거
+        root_logger = logging.getLogger()
+        root_logger.removeHandler(self.log_handler)
+
         if self.client and self.client.is_connected():
             self.client.disconnect()
         event.accept()

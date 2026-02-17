@@ -204,8 +204,7 @@ class ExchangeClient:
                 self._extract_email_address(r) for r in (message.to_recipients or [])
             ],
             "cc_recipients": [
-                self._extract_email_address(r)
-                for r in (message.cc_recipients or [])
+                self._extract_email_address(r) for r in (message.cc_recipients or [])
             ],
             "body": message.body or "",
             "text_body": message.text_body or "",

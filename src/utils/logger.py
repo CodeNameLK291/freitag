@@ -35,3 +35,13 @@ def setup_logger(name: str = "freitag", level: int = logging.INFO) -> logging.Lo
     logger.addHandler(console_handler)
 
     return logger
+
+
+def add_ui_handler(logger: logging.Logger, handler: logging.Handler) -> None:
+    """로거에 UI 핸들러 추가
+
+    Args:
+        logger: 핸들러를 추가할 로거
+        handler: 추가할 핸들러
+    """
+    logger.addHandler(handler)
